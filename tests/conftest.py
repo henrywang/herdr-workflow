@@ -121,6 +121,34 @@ def repo(tmp_path: Path, origin: Path) -> Path:
 
 
 @pytest.fixture
+def master_repo(tmp_path: Path) -> Path:
+    """A clone of a repository whose default branch is `master`, with no published HEAD.
+
+    The case Bash's hard-coded `origin/main` could never build in. `build` resolves the
+    base in the parent checkout and records it; `revise` reads it back and diffs in the
+    linked worktree -- a different directory, so it is worth proving end to end rather than
+    assuming a shared `.git` makes it work.
+    """
+    work = tmp_path / "old-seed"
+    work.mkdir()
+    git_run(work, "init", "--initial-branch=master")
+    git_run(work, "config", "user.email", "t@example.com")
+    git_run(work, "config", "user.name", "Test")
+    (work / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    git_run(work, "add", ".")
+    git_run(work, "commit", "-m", "initial")
+
+    bare = tmp_path / "old-origin.git"
+    git_run(tmp_path, "clone", "--bare", str(work), str(bare))
+    clone = tmp_path / "old-repo"
+    git_run(tmp_path, "clone", str(bare), str(clone))
+    git_run(clone, "config", "user.email", "t@example.com")
+    git_run(clone, "config", "user.name", "Test")
+    git_run(clone, "remote", "set-head", "origin", "--delete")
+    return clone.resolve()
+
+
+@pytest.fixture
 def snapshot_result() -> dict[str, Any]:
     def ws(label: str, ws_id: str, status: str = "idle") -> dict[str, Any]:
         return {

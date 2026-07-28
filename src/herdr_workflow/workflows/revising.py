@@ -14,6 +14,7 @@ a branch; `revise` hands you the findings you asked for, which is a result, not 
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,19 +157,32 @@ async def _find_panes(client: HerdrClient, slug: str, repo: str) -> tuple[str, s
     return code_pane, review_pane
 
 
+# A second look before declaring an agent gone. Short, because this is confirming a
+# reading rather than waiting for anything to happen.
+UNKNOWN_RECHECK = 1.0
+
+
 async def _require_idle(client: HerdrClient, slug: str, repo: str, *panes: str) -> None:
     """Refuse to start a turn in a pane that is already in one.
 
     Two revises landing in the same panes interleave their prompts and one is lost
     silently. A pane mid-turn is not idle, so this is cheap to rule out up front.
 
-    **`unknown` is fatal here**, unlike in `delivery`, where `UNKNOWN_GRACE` waits it out.
-    There, the agent was started moments ago and registration is asynchronous; here it was
-    started by `build`, minutes or hours back, so `unknown` can only mean gone. Waiting
-    would burn every retry on a pane that cannot answer.
+    **`unknown` is fatal here**, unlike in `delivery`, where `UNKNOWN_GRACE` waits out a
+    long registration. There the agent was started moments ago and registration is
+    asynchronous; here it was started by `build`, minutes or hours back, so a pane that
+    really has no agent is not going to grow one.
+
+    But it is confirmed with a second read first, because `agent_state` reports `unknown`
+    for *any* failed `agent.get` -- a transient error included -- and one sample cannot
+    tell "gone" from "the call failed once". Declaring it gone throws away a worktree with
+    committed work in it, which is far too expensive to get wrong on a single read.
     """
     for pane in panes:
         status = (await agent_state(client, pane)).status
+        if status == "unknown":
+            await asyncio.sleep(UNKNOWN_RECHECK)
+            status = (await agent_state(client, pane)).status
         if status in ("working", "blocked"):
             raise WorkflowError(
                 f"a turn is still in flight for {slug}",
@@ -178,6 +192,6 @@ async def _require_idle(client: HerdrClient, slug: str, repo: str, *panes: str) 
         if status == "unknown":
             raise WorkflowError(
                 f"the agent in pane {pane} is gone",
-                why="the pane is still there but nothing is running in it",
+                why="two reads in a row found no agent running in it",
                 fix=f"re-run: wq build {slug} {repo}",
             )

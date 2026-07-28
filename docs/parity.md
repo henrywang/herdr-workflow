@@ -240,6 +240,13 @@ ignores the rest, so it reads a Python-written file without noticing line five. 
 Bash-written file has no line five, and Python reads its absence as `origin/main` —
 which is what Bash meant.
 
+**Checked end to end, not assumed.** `build` resolves the base in the *parent checkout*;
+`revise` reads it back and diffs in the *linked worktree*, a different directory that never
+re-fetches. A linked worktree shares `.git` with its parent, so `origin/master` resolves
+there too — `test_a_master_repo_can_be_built_and_then_revised` proves it, because a base
+that failed to resolve would produce an empty delta and read as "the agent changed nothing"
+rather than as an error.
+
 The one divergence that remains: a build started by Python in a `master` repository and
 finished by Bash would have its diff regenerated against `origin/main`. Bash never
 supported those repositories at all, so this trades a command that could not work for one

@@ -17,7 +17,7 @@ from herdr_workflow.config import Config
 from herdr_workflow.errors import WorkflowError
 from herdr_workflow.herdr import delivery
 from herdr_workflow.herdr.client import HerdrClient
-from herdr_workflow.workflows import building, listing, prompts, revising
+from herdr_workflow.workflows import build_env, building, listing, prompts, revising
 from tests.build_scenario import WS, Scenario, agent_info, build_config, with_plan
 from tests.fake_herdr import FakeHerdr
 
@@ -54,12 +54,14 @@ async def test_one_code_turn_and_one_review_turn(
         client, fake, root, repo, [prompts.VERDICT_APPROVED, prompts.VERDICT_CHANGES]
     )
     turns_before = scenario.code_turns
+    scenario.prompts.clear()
 
     result = await revising.revise(client, config, "x", "rename the function")
 
+    # The reviewer had findings, and nothing went back to the code pane to fix them.
+    assert result.approved is False
     assert scenario.code_turns == turns_before + 1
-    assert result.approved is False  # the reviewer had findings...
-    assert scenario.code_turns == turns_before + 1  # ...and nothing auto-fixed them
+    assert [p for p, _t in scenario.prompts] == [f"{WS}:p1", f"{WS}:p2"]
 
 
 async def test_the_delta_is_what_this_turn_changed(
@@ -152,6 +154,28 @@ async def test_a_revised_build_is_the_one_wq_list_marks(
     assert result.current == "x"
 
 
+async def test_a_master_repo_can_be_built_and_then_revised(
+    client: HerdrClient, fake: FakeHerdr, tmp_path: Path, master_repo: Path
+) -> None:
+    """The repository Bash's hard-coded `origin/main` could never touch, end to end.
+
+    `build` resolves the base in the parent checkout and records it; `revise` reads it back
+    and diffs in the *linked worktree*, a different directory. A linked worktree shares
+    `.git` with its parent so `origin/master` resolves there too -- but that is worth
+    proving rather than assuming, because a base that fails to resolve here would produce
+    an empty delta and read as "the agent changed nothing".
+    """
+    root = tmp_path / "wq"
+    config, _scenario, paths = await _built(client, fake, root, master_repo)
+    assert build_env.read(paths.env).base == "origin/master"
+
+    await revising.revise(client, config, "x", "and one more")
+
+    assert paths.delta.read_text().strip()
+    assert "change2.py" in paths.delta.read_text()
+    assert "change1.py" in paths.diff.read_text()
+
+
 async def test_approval_is_reported_without_stopping_anything(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
 ) -> None:
@@ -240,12 +264,12 @@ async def test_a_pane_mid_turn_refuses_rather_than_interleaving(
     assert scenario.prompts == []
 
 
-async def test_an_agent_that_is_gone_is_fatal_with_no_grace_period(
+async def test_an_agent_that_is_really_gone_is_fatal(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
 ) -> None:
     """`delivery` waits `unknown` out because registration is asynchronous. Here the agent
-    was started by `build` minutes ago, so `unknown` can only mean gone -- waiting would
-    burn every retry on a pane that cannot answer."""
+    was started by `build` minutes ago, so a pane that really has no agent is not going to
+    grow one -- waiting would burn every retry on a pane that cannot answer."""
     root = tmp_path / "wq"
     config, _scenario, _paths = await _built(client, fake, root, repo)
     fake.on_error("agent.get", "no_agent", "no agent in pane")
@@ -254,6 +278,39 @@ async def test_an_agent_that_is_gone_is_fatal_with_no_grace_period(
         await revising.revise(client, config, "x", "change something")
     assert "is gone" in caught.value.message
     assert "wq build x" in (caught.value.fix or "")
+
+
+async def test_a_single_failed_read_does_not_condemn_a_live_agent(
+    client: HerdrClient,
+    fake: FakeHerdr,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    repo: Path,
+) -> None:
+    """`agent_state` reports `unknown` for *any* failed `agent.get`, transient errors
+    included, so one sample cannot tell "gone" from "the call failed once".
+
+    Declaring it gone throws away a worktree with committed work in it. Rule of thumb #9:
+    distinguish "not there" from "never coming" by a second read, not a single one.
+    """
+    monkeypatch.setattr(revising, "UNKNOWN_RECHECK", 0.001)
+    root = tmp_path / "wq"
+    config, scenario, _paths = await _built(client, fake, root, repo)
+
+    calls = {"n": 0}
+
+    def flaky(params: dict[str, Any]) -> dict[str, Any]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"__error__": {"code": "internal", "message": "transient"}}
+        # Then behave normally -- `scenario.seq` is what makes delivery confirmable.
+        return agent_info(params["target"], "idle", scenario.seq)
+
+    fake.on("agent.get", flaky)
+
+    result = await revising.revise(client, config, "x", "change something")
+    assert result.approved is True
+    assert scenario.code_turns == 2  # the build's turn, and this one
 
 
 async def test_the_review_pane_is_checked_too(
