@@ -192,12 +192,10 @@ class SnapshotResult(msgspec.Struct):
 
 
 class WorkspaceCreated(msgspec.Struct):
-    """Result of `workspace.create` and `worktree.create`.
+    """Result of `workspace.create`.
 
-    Note `worktree.create` reports only the workspace it was asked for. When the repo had
-    no workspace open it silently opens a second one for the parent checkout -- see
-    behavior #6. Nothing in this struct reveals that; only diffing the workspace list
-    around the call does.
+    **Not `worktree.create`** -- that has its own result type and its own `worktree` field
+    of a shape this struct knows nothing about. See `WorktreeCreated` and behavior #12.
     """
 
     workspace: Workspace

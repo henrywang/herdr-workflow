@@ -101,3 +101,38 @@ async def test_underscored_subscription_name_is_rejected(live: HerdrClient) -> N
         async with live.subscribe([{"type": "workspace_created"}]):
             pass
     assert caught.value.code == "invalid_request"
+
+
+async def test_worktree_create_decodes_without_creating_anything(live: HerdrClient) -> None:
+    """Behavior #12's regression test, and it costs nothing.
+
+    `worktree.create` was modelled with the *workspace's* `WorktreeInfo` rather than its
+    own -- two different structs sharing one name in the schema. It passed every unit test,
+    because the fake was wrong the same way, and then failed on a live server *after*
+    creating the worktree and both workspaces.
+
+    A bad `cwd` makes herdr reject the call before it creates anything, so this exercises
+    the same decode path against the real server with no side effects to clean up. It
+    proves the request shape reaches the handler; the response struct is proven by
+    `wq build`'s live runs, recorded in docs/parity.md.
+
+    Phase 7 models `worktree.remove` and `worktree.list`, and `worktree.list` returns the
+    *other* struct -- the same fork in the road, one phase away.
+    """
+    with pytest.raises(ApiError) as caught:
+        await live.request(
+            "worktree.create",
+            {
+                "cwd": "/nonexistent/wq-integration-probe",
+                "branch": "wq/probe",
+                "base": "origin/main",
+                "path": "/nonexistent/wq-integration-probe-worktrees/probe",
+                "label": "wq-probe",
+                "focus": False,
+            },
+        )
+    # Whatever herdr calls it, the point is that it is a *handled* rejection rather than
+    # `invalid_request`, which would mean wq is sending params the method does not accept.
+    assert caught.value.code != "invalid_request", (
+        f"herdr rejected the params themselves: {caught.value.message}"
+    )

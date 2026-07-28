@@ -19,7 +19,7 @@ from herdr_workflow.config import Config
 from herdr_workflow.errors import GitError, WorkflowError
 from herdr_workflow.herdr import delivery
 from herdr_workflow.herdr.client import HerdrClient
-from herdr_workflow.workflows import build_env, building, prompts
+from herdr_workflow.workflows import build_env, building, listing, prompts
 from tests.conftest import git_run
 from tests.fake_herdr import FakeHerdr
 
@@ -549,6 +549,30 @@ async def test_the_two_agents_are_different_models_in_their_own_panes(
     kinds = {c["params"]["pane_id"]: c["params"]["args"] for c in starts}
     assert kinds[f"{WS}:p1"] != kinds[f"{WS}:p2"]
     assert {c["params"]["label"] for c in fake.calls("pane.rename")} == {"code", "review"}
+
+
+async def test_a_finished_build_is_what_wq_list_looks_for(
+    client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
+) -> None:
+    """`build` writes the files, `list` reads them, and nothing else connects the two.
+
+    `list` decides a bare-slug workspace is wq's by finding a `build.env` beside it, and
+    picks the `*` most-recently-worked marker from `diff.patch` mtimes -- both router
+    contracts, and both fed entirely by whatever `build` happens to leave on disk. The
+    listing tests use hand-written files, so this is the one place the real producer meets
+    the real consumer.
+    """
+    root = tmp_path / "wq"
+    paths = _with_plan(root)
+    Scenario(fake, paths, repo, reviews=[prompts.VERDICT_APPROVED])
+
+    await building.build(client, _config(root), "x", repo)
+
+    result = await listing.collect(client, root)
+    row = next(r for r in result.rows if r.label == "x")
+    assert row.is_build is True
+    assert result.current == "x"
+    assert "  * " in listing.render(result)
 
 
 async def test_the_worktree_is_branched_from_the_resolved_base(

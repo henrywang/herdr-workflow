@@ -71,11 +71,15 @@ class WorkflowError(WqError):
 
 
 class RoundLimitReached(WorkflowError):
-    """A review loop hit its round cap with findings outstanding.
+    """A review loop hit its round cap with findings outstanding. Exit code 2.
 
-    Exit code 2, matching the Bash implementation. The router prompt tells the router to
-    print output verbatim and stop on any non-zero exit, so this stays distinguishable
-    from a hard failure.
+    **Currently unused.** `wq build` reports its round cap as a `BuildResult` the CLI turns
+    into `typer.Exit(2)`, because stopping at the cap is an outcome to report rather than
+    an error to raise -- the loop has already printed what happened, and an error block
+    with a `why` and a `fix` would be wrong about both.
+
+    Kept because the exit code is a router contract (`go.md:61`) and this is where it is
+    written down. Delete it if Phase 7 finds no use for it either.
     """
 
     exit_code = 2
