@@ -11,9 +11,12 @@ uv run pytest        # ~30s, and does not need herdr installed
 
 That last part is the point. The unit suite runs against a fake herdr daemon and a fake
 `gh`, so you can change the retry logic, the round loops, or the cleanup ordering and know
-within seconds whether you broke something. The Bash implementation this replaces could
-only be tested by running it against real agents — minutes and real tokens per iteration —
-and that, not line count, is what the rewrite bought.
+within seconds whether you broke something.
+
+The alternative — the way this code was originally developed — is to verify every change by
+running it against real agents, at minutes and real tokens per iteration. If you find
+yourself about to do that, it usually means a fake needs extending rather than that the
+change is untestable.
 
 Before pushing:
 
@@ -94,7 +97,12 @@ Two constraints on anything you change there:
 
 ## Behaviour changes
 
-`wq`'s CLI surface is a compatibility contract: it is called by an agent router that reads
-its output and its exit codes. Exit codes in particular are load-bearing — `build` exits 2
-at its round cap where `revise` exits 0. If you change an output format or an exit code, say
-so in [docs/parity.md](docs/parity.md) under "Known deviations", with the reasoning.
+`wq`'s CLI surface is a contract, not a convenience: it is called by an agent router that
+reads its output and branches on its exit codes. Exit codes in particular are load-bearing
+— `build` exits **2** at its round cap, meaning "unreviewed code is sitting on a branch",
+where `revise` exits **0** because findings are what you asked it for, and both are
+distinct from the **1** of a real failure.
+
+The same goes for the `*` marker in `wq list`, which is how a router picks the build to
+revise. If you change an output format or an exit code, put it in
+[CHANGELOG.md](CHANGELOG.md) with the reasoning — someone's automation is reading it.

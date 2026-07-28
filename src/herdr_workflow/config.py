@@ -1,10 +1,9 @@
 """Configuration: built-in defaults, then user config, then project config, then env.
 
-The `WQ_*` environment variables are not a legacy shim -- they are how the Bash
-implementation was configured, they are documented in devcage-macos/WORKFLOW.md, and the
-router prompt uses them inline (`WQ_AGENT_CODE=claude:opus:high wq build <slug>`). They
-stay as the final override layer, above files, so a one-off on the command line still
-wins.
+The `WQ_*` environment variables are the **last** layer, above every file, because the
+common way to override a role is inline for one command:
+`WQ_AGENT_CODE=claude:opus:high wq build <slug>`. An agent router driving wq does the same
+thing, so a config file must never be able to win over that.
 """
 
 from __future__ import annotations

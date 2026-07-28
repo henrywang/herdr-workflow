@@ -4,9 +4,11 @@ Typer is synchronous and the herdr client is async. The boundary is `_run` and n
 else -- one `asyncio.run` at the command edge. Scattering event loops through the
 workflow layer is how this stops being testable.
 
-The Bash CLI surface is the compatibility contract. Command names, aliases, argument
-order, and exit codes all match, because the router prompt in devcage-macos calls them by
-name and reads their output.
+**This surface is a contract, not a convenience.** wq is designed to be driven by an agent
+router as much as by a person, and a router calls these commands by name, reads their
+output, and branches on their exit codes. Command names, aliases, argument order, output
+format and exit codes are all load-bearing -- see CONTRIBUTING.md before changing any of
+them.
 """
 
 from __future__ import annotations

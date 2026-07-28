@@ -4,23 +4,21 @@ Every entry below was discovered by running the thing and watching it fail — u
 somewhere unhelpful, like a loop that hung for thirty minutes on work that finished in
 two. None of it is guesswork, and none of it is style.
 
-This file is the specification for the Python port. `wq` was Bash first, and the Bash
-source is cited throughout as `wq:<line>`, referring to the implementation preserved at
-[`devcage-macos/config/herdr/wq`](https://github.com/henrywang/devcage-macos). The point
-of the rewrite is that each of these becomes a named test against a fake daemon instead of
-a live experiment costing minutes and tokens.
-
 **If you script Claude Code, Codex, or Amp, most of this applies to you whether or not you
-use herdr.** The specifics are herdr's; the failure *classes* are not.
+use herdr.** The specifics are herdr's; the failure *classes* are not — a status field that
+cannot distinguish two states, a signal that is sometimes absent, a success response that
+confirms the wrong thing.
 
-Each entry names the test that covers it. `(pending)` means the phase that needs it has
-not landed yet.
+Every entry names the test that pins it. That pairing is the point: each of these was once
+a live experiment costing minutes and tokens to reproduce, and is now a sub-second test
+against a fake daemon. If you take one thing from this file, take the
+[rules of thumb](#rules-of-thumb) at the end.
 
 ---
 
 ## 1. A pane can report "ready" while it will silently eat your prompt
 
-**Bash:** `wq:173-197` · **Test:** `tests/unit/test_delivery.py`
+**Test:** `tests/unit/test_delivery.py`
 
 Claude Code asks *"Is this a project you created or one you trust?"* the first time it
 runs in a directory — which is every pane `wq` starts, since the scratch dir and the build
@@ -68,7 +66,7 @@ the prompt anyway.
 
 ## 2. `agent.prompt` returning OK does not mean the agent took the text
 
-**Bash:** `wq:199-244` · **Test:** `tests/unit/test_delivery.py`
+**Test:** `tests/unit/test_delivery.py`
 
 `agent.prompt` reports whether **herdr** accepted the request — not whether the **TUI**
 accepted the text. A TUI mid-startup, or sitting on a dialog, drops it without a trace.
@@ -108,10 +106,9 @@ whether it says so is not a property of the pane you can predict.
 **This makes it a warm-up hint, not a gate.** Two consequences:
 
 1. **Never block on it for long.** The ceiling is 10s and paid in full whenever the hint
-   does not arrive. The Bash implementation's `agent_ready()` instead treats it as a hard
-   requirement and *dies* after 60 seconds with *"agent in pane X never became ready for
-   input"* — on run A above, that path would have failed a `wq chat` that was working
-   perfectly.
+   does not arrive. The obvious implementation — poll until ready, fail after 60s with
+   *"pane X never became ready for input"* — is what this code did first, and on run A
+   above it would have failed a command that was working perfectly.
 2. **Never build correctness on it.** `wait_ready` returns a boolean rather than raising,
    logs when the hint never came, and prompts anyway. The delivery receipt is the guard.
 
@@ -134,7 +131,7 @@ a grace window has passed with no agent ever seen.
 
 ## 3. A freshly created pane is not at a shell prompt yet
 
-**Bash:** `wq:103-129` · **Test:** `tests/unit/test_agents.py`
+**Test:** `tests/unit/test_agents.py`
 
 `pane.split` returns as soon as the pane exists. Starting an agent in it immediately fails
 with `agent_pane_busy`. The gap is short but real.
@@ -147,7 +144,7 @@ model name into a fifteen-second hang followed by a confusing message.
 
 ## 4. Agent names are global, so concurrent workspaces collide
 
-**Bash:** `wq:105-111` · **Test:** `tests/unit/test_agents.py`
+**Test:** `tests/unit/test_agents.py`
 
 herdr's agent names are global, not scoped to a workspace. A second concurrent `wq`
 command starting its own `idea` or `review` pane fails with `agent_name_taken`.
@@ -164,7 +161,7 @@ concurrency breaks again, in a way tests that run one workflow at a time will no
 
 ## 5. `done` is not a state that persists
 
-**Bash:** `wq:250-281` · **Test:** `tests/unit/test_loops.py`
+**Test:** `tests/unit/test_loops.py`
 
 `done` is where a finished turn lands, but it does not stay there: **a pane that has been
 read settles back to `idle`.** Wait on `done` alone and you hang for the full turn timeout
@@ -181,7 +178,7 @@ can flash idle between steps of a single turn.
 
 ## 6. Creating one worktree can open two workspaces
 
-**Bash:** `wq:531-553` · **Test:** `test_building.py::test_the_parent_workspace_is_found_and_recorded`
+**Test:** `test_building.py::test_the_parent_workspace_is_found_and_recorded`
 
 `worktree.create` opens **two** workspaces when the repo has no workspace open yet:
 
@@ -213,7 +210,7 @@ when validating.
 
 ## 7. `gh pr merge --delete-branch` fails *after* the merge lands
 
-**Bash:** `wq:775-782` · **Test:** `test_shipping.py::test_merge_never_passes_delete_branch`
+**Test:** `test_shipping.py::test_merge_never_passes_delete_branch`
 
 In a worktree checkout, `--delete-branch` makes `gh` clean up the local branch by first
 switching the current checkout to the default branch. But `main` is already checked out in
@@ -233,7 +230,7 @@ the function.** Cleanup after a landed merge is best-effort by definition.
 
 ## 8. Only close a workspace that is still what you left behind
 
-**Bash:** `wq:76-94` · **Test:** `tests/unit/test_inbox_and_clean.py`
+**Test:** `tests/unit/test_inbox_and_clean.py`
 
 The parent workspace from behavior #6 must be cleaned up — but by the time cleanup runs, a
 human may have adopted it.
@@ -253,7 +250,7 @@ label-based search for the slug.
 
 ## 9. Terminal state is a heuristic. A file on disk is not.
 
-**Bash:** `wq:299-304` · **Test:** `tests/unit/test_loops.py`
+**Test:** `tests/unit/test_loops.py`
 
 Every behavior above is an inference about what a TUI is doing from the outside. Each one
 is right most of the time.
@@ -268,7 +265,7 @@ This is the backstop that makes the rest safe to get occasionally wrong.
 
 ## 10. Read the whole response; do not stream into a short-circuit
 
-**Bash:** `wq:51-56` · **Test:** `tests/unit/test_client.py`
+**Test:** `tests/unit/test_client.py`
 
 In Bash: `herdr status | grep -q` exits as soon as `grep` matches, herdr takes SIGPIPE, and
 `pipefail` turns a healthy server into a failed check. Capture the output, then test it.
@@ -344,7 +341,7 @@ decode happens after the request, which is to say after the side effects.
 
 ## 13. "No checks reported" reads like a CI failure and means the opposite
 
-**Bash:** `wq:757-770` · **Test:** `test_shipping.py::test_no_checks_reported_is_waited_out_not_treated_as_failure`
+**Test:** `test_shipping.py::test_no_checks_reported_is_waited_out_not_treated_as_failure`
 
 GitHub registers a pull request's check runs a few seconds *after* the PR opens. In that
 window `gh pr checks --watch` does not wait — it **exits immediately** with `no checks

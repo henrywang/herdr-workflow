@@ -2,7 +2,7 @@
 
 Idempotent by design: every step checks before it acts, so running this when everything is
 already fine costs one snapshot and changes nothing. That is what makes it safe to bind to
-a key or a shell startup, which is exactly what devcage-macos does.
+a key or run from a shell startup file, which is how it is meant to be used.
 
 The router only classifies and dispatches, so its context stays flat no matter how many
 questions you ask. Answers -- and the file reads behind them -- land in tabs you can close.

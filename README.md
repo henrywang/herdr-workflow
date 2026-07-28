@@ -4,10 +4,9 @@
 *different model* reviews adversarially, they iterate under a hard round cap, and the
 result ships as a merged pull request.
 
-> **Status: all 13 commands work**, ported from a Bash implementation that has been in
-> daily use. Every one has been driven live against a real herdr daemon and real agents;
-> the push-to-merge half of `wq go` is covered by tests against a fake `gh` rather than a
-> real merge. See [docs/parity.md](docs/parity.md) for what was checked and how.
+> **Status: all 13 commands work**, and every one has been driven end to end against a
+> real herdr daemon and real agents. The exception is the push-to-merge half of `wq go`,
+> which is covered by tests against a fake `gh` rather than by a real merge.
 
 ## Two ideas worth stealing, even if you never run this
 
@@ -159,9 +158,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how the pieces fit together.
   file here if you are scripting agent TUIs at all
 - [docs/protocol-framing.md](docs/protocol-framing.md) — the herdr socket contract, as
   established by probing a real daemon
-- [docs/parity.md](docs/parity.md) — how Bash/Python parity is checked, what has been
-  checked, and every deliberate deviation
-- [PLAN.md](PLAN.md) — architecture and migration order
+- [CHANGELOG.md](CHANGELOG.md) — what changed, and the design decisions behind it
 
 ## License
 
