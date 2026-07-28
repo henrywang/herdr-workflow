@@ -25,8 +25,8 @@ from herdr_workflow.errors import WqError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
+from herdr_workflow.workflows import cleanup, inbox, listing
 from herdr_workflow.workflows import doctor as doctor_workflow
-from herdr_workflow.workflows import listing
 
 app = typer.Typer(
     name="wq",
@@ -184,12 +184,87 @@ def cmd_doctor() -> None:
     _guard(body)
 
 
+@app.command("up")
+def cmd_up() -> None:
+    """Bring up the inbox and its router. Idempotent."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> inbox.UpResult:
+            async with connect(path) as client:
+                return await inbox.up(client, cfg, Path.home())
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "workspace_id": result.workspace_id,
+                        "pane_id": result.pane_id,
+                        "created_workspace": result.created_workspace,
+                        "started_router": result.started_router,
+                    },
+                    indent=2,
+                )
+            )
+            return
+        if result.created_workspace:
+            console.log(f"created workspace '{cfg.herdr.inbox_label}'")
+        console.log("router started" if result.started_router else "router already running")
+
+    _guard(body)
+
+
+@app.command("clean")
+def cmd_clean(slug: Annotated[str, typer.Argument(help="The slug to drop.")]) -> None:
+    """Drop a slug's workspaces and its scratch directory."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> cleanup.CleanResult:
+            async with connect(path) as client:
+                return await cleanup.clean(client, slug, cfg.root)
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "closed_workspaces": result.closed_workspaces,
+                        "closed_tabs": result.closed_tabs,
+                        "removed_dir": str(result.removed_dir) if result.removed_dir else None,
+                    },
+                    indent=2,
+                )
+            )
+            return
+        console.log(f"cleaned {slug}")
+        for label in result.closed_workspaces:
+            console.detail(f"  closed workspace {label}")
+        for label in result.closed_tabs:
+            console.detail(f"  closed tab {label}")
+        if result.removed_dir:
+            console.detail(f"  removed {result.removed_dir}")
+
+    _guard(body)
+
+
 # Aliases the Bash implementation accepted. The router and years of muscle memory use
 # them, so they are part of the contract rather than a convenience.
 @app.command("ls", hidden=True)
 def cmd_ls() -> None:
     """Alias for `list`."""
     cmd_list()
+
+
+@app.command("rm", hidden=True)
+def cmd_rm(slug: Annotated[str, typer.Argument()]) -> None:
+    """Alias for `clean`."""
+    cmd_clean(slug)
 
 
 def entrypoint() -> None:

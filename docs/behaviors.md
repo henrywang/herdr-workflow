@@ -70,6 +70,24 @@ in `done` from its previous turn, so seeing `done` proves nothing.
 not solve this. It waits on agent state, and the failure here is that the agent never
 enters a state at all.
 
+### `interactive_ready` is frequently absent — do not build readiness on it
+
+**[verified, herdr 0.7.5]** The field is **optional in the schema** and herdr **omits it
+entirely** from both `agent.list` and `agent.get` for a freshly started `pi` agent. Not
+`false` — missing.
+
+So a readiness poll that waits for `interactive_ready == true` can wait forever. The Bash
+implementation's `agent_ready()` does exactly that, with a 60-second cap; it presumably
+survives because the field does appear for some agent kinds or some states, but we have
+not yet seen it appear at all.
+
+Our model types it `bool | None`, because *absent* and *false* are different claims and
+collapsing them loses the distinction that matters.
+
+**Open for Phase 4:** find out when, if ever, herdr sets it — by agent kind, and by how
+far into startup. Until then, readiness has to rest on `state_change_seq` (this behavior)
+and on reading the screen (behavior #1), not on this flag.
+
 ---
 
 ## 3. A freshly created pane is not at a shell prompt yet

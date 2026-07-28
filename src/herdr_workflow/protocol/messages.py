@@ -132,9 +132,16 @@ class Agent(msgspec.Struct):
     so this reports true while the only input the pane accepts is a dialog answer
     (behavior #1). Necessary but not sufficient.
 
+    **It is `None` more often than you would expect.** The schema marks it optional, and
+    herdr 0.7.5 omits it entirely from both `agent.list` and `agent.get` for a freshly
+    started pi agent. So it is modelled as `bool | None`: absent and false are different
+    claims, and treating a missing field as "not ready" would wait forever. Readiness
+    cannot be built on this field alone -- see behavior #2.
+
     `state_change_seq` -- the receipt that a prompt was actually taken. `agent.prompt`
     returning ok means herdr accepted the request, not that the TUI took the text
-    (behavior #2). This number moving is the only proof.
+    (behavior #2). This number moving is the only proof. Verified present and non-zero on
+    a live agent.
     """
 
     pane_id: str
@@ -144,7 +151,7 @@ class Agent(msgspec.Struct):
     focused: bool
     agent_status: str
     revision: int
-    interactive_ready: bool = False
+    interactive_ready: bool | None = None
     launch_pending: bool = False
     state_change_seq: int = 0
     name: str | None = None
@@ -176,3 +183,40 @@ class SnapshotResult(msgspec.Struct):
 
     snapshot: Snapshot
     type: str = "session_snapshot"
+
+
+class WorkspaceCreated(msgspec.Struct):
+    """Result of `workspace.create` and `worktree.create`.
+
+    Note `worktree.create` reports only the workspace it was asked for. When the repo had
+    no workspace open it silently opens a second one for the parent checkout -- see
+    behavior #6. Nothing in this struct reveals that; only diffing the workspace list
+    around the call does.
+    """
+
+    workspace: Workspace
+    root_pane: Pane
+    tab: Tab | None = None
+    type: str = "workspace_created"
+
+
+class TabCreated(msgspec.Struct):
+    """Result of `tab.create`."""
+
+    root_pane: Pane
+    tab: Tab | None = None
+    type: str = "tab_created"
+
+
+class PaneResult(msgspec.Struct):
+    """Result of `pane.get` and `pane.split`."""
+
+    pane: Pane
+    type: str = "pane_info"
+
+
+class AgentListResult(msgspec.Struct):
+    """Result of `agent.list`."""
+
+    agents: list[Agent] = []
+    type: str = "agent_list"

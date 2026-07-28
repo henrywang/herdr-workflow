@@ -71,8 +71,11 @@ async def test_snapshot_decodes_into_our_hand_written_types(live: HerdrClient) -
         assert pane.workspace_id
     for agent in snapshot.agents:
         assert agent.pane_id
-        assert isinstance(agent.interactive_ready, bool)
         assert isinstance(agent.state_change_seq, int)
+        # interactive_ready is optional in the schema and herdr 0.7.5 omits it entirely
+        # for a running pi agent, so None is a legitimate value. Anything that waits on
+        # readiness must cope with never seeing it.
+        assert agent.interactive_ready in (True, False, None)
 
 
 async def test_params_is_required_even_when_empty(live: HerdrClient) -> None:
