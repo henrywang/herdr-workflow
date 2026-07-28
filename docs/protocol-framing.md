@@ -84,9 +84,11 @@ presence.
 **[docs]** `id` correlates responses to requests.
 
 **[log]** The `herdr` CLI uses human-readable, **non-unique** ids — `cli:pane:rename`,
-`cli:agent:start`, and `cli:agent:start` again minutes later. That is only safe because
-the CLI opens one connection per request. It tells us nothing about whether the server
-requires uniqueness.
+`cli:agent:start`, and `cli:agent:start` again minutes later.
+
+**[inference, unverified]** That is presumably safe because the CLI opens one connection
+per request, so no two live requests ever share an id. We have not confirmed that, and it
+tells us nothing about whether the server requires uniqueness.
 
 **We generate unique ids anyway.** We hold one long-lived connection, so uniqueness is
 ours to guarantee regardless of what the server tolerates.

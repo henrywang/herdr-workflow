@@ -48,16 +48,23 @@ def _mtime(path: Path) -> float:
         return 0.0
 
 
-def build_slugs(root: Path) -> set[str]:
-    """Slugs with a build.env -- the only thing that makes a bare-slug workspace ours."""
+def scan_scratch(root: Path) -> tuple[set[str], list[str]]:
+    """One pass over the scratch root, returning (build slugs, every entry).
+
+    Read once rather than twice: `builds` and `scratch` come from the same directory, and
+    scanning it twice lets a concurrent `wq clean` land between them and produce a listing
+    that contradicts itself.
+    """
     if not root.is_dir():
-        return set()
-    return {d.name for d in root.iterdir() if d.is_dir() and (d / "build.env").is_file()}
+        return set(), []
+    entries = sorted(root.iterdir(), key=lambda p: p.name)
+    builds = {d.name for d in entries if d.is_dir() and (d / "build.env").is_file()}
+    return builds, [p.name for p in entries]
 
 
 async def collect(client: HerdrClient, root: Path) -> Listing:
     snapshot = await client.snapshot()
-    builds = build_slugs(root)
+    builds, scratch = scan_scratch(root)
 
     candidates = [
         ws for ws in snapshot.workspaces if _MANAGED_LABEL.match(ws.label) or ws.label in builds
@@ -92,7 +99,6 @@ async def collect(client: HerdrClient, root: Path) -> Listing:
         for ws in candidates
     ]
 
-    scratch = sorted(d.name for d in root.iterdir()) if root.is_dir() else []
     return Listing(rows=rows, scratch=scratch, root=root)
 
 

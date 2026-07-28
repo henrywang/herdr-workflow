@@ -172,11 +172,19 @@ async def run(config: Config, cwd: Path) -> list[Check]:
             Check("herdr socket", Status.FAIL, f"{path} does not exist", "start it with: herdr")
         )
     else:
-        checks.append(Check("herdr socket", Status.OK, str(path)))
+        # Do not report the socket as OK until something answers on it. A socket file
+        # outlives the process that made it, so "the file is there" and "herdr is running"
+        # are different claims -- and doctor's whole job is not being confusing about
+        # exactly this.
         try:
             async with connect(path) as client:
-                checks.extend(await _server_checks(client))
+                server = await _server_checks(client)
+            checks.append(Check("herdr socket", Status.OK, str(path)))
+            checks.extend(server)
         except HerdrError as exc:
+            checks.append(
+                Check("herdr socket", Status.FAIL, f"{path} exists but is stale", exc.why)
+            )
             checks.append(
                 Check("herdr server", Status.FAIL, exc.message, exc.fix or "start it with: herdr")
             )

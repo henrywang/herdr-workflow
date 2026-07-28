@@ -48,6 +48,16 @@ class Context:
 _ctx = Context()
 
 
+def reset_context() -> None:
+    """Discard resolved global options.
+
+    A process normally runs one command and exits, so this exists for tests: without it
+    one invocation's `--json` leaks into the next case through module state.
+    """
+    global _ctx
+    _ctx = Context()
+
+
 def _run[R](coro: Coroutine[Any, Any, R]) -> R:
     """The one place an event loop is started."""
     return asyncio.run(coro)
