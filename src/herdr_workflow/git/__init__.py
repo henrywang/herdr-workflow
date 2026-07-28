@@ -119,6 +119,22 @@ def resolve_base(repo: Path, remote: str = "origin") -> str:
     )
 
 
+def branch_of(base: str) -> str:
+    """`origin/main` -> `main`.
+
+    The base ref is recorded remote-qualified because that is what a diff range wants. A
+    pull request's `--base` and a rebase target want the branch name. Derived once here so
+    three call sites cannot disagree -- the Bash implementation hard-coded `main` in all of
+    them.
+    """
+    return base.split("/", 1)[1] if "/" in base else base
+
+
+def push(worktree: Path, branch: str, remote: str = "origin") -> None:
+    """Push the branch and set upstream. Fatal: nothing downstream works without it."""
+    _run(["push", "-u", remote, branch], worktree, what=f"push {branch}")
+
+
 def head_commit(worktree: Path) -> str:
     """The commit `HEAD` points at.
 
@@ -155,3 +171,66 @@ def write_delta(worktree: Path, since: str, out: Path) -> int:
     text = _run(["diff", f"{since}..HEAD"], worktree, what=f"diff {since}..HEAD")
     out.write_text(text)
     return len(text)
+
+
+# -- cleanup, after a merge that has already landed --------------------------
+# Everything below runs after `gh pr merge` has succeeded, so **nothing here may raise.**
+# Rule of thumb #4: after an irreversible step, nothing may abort. A failure to tidy up is
+# a message, not an error -- the merge is not coming back either way.
+
+
+def fetch_prune(repo: Path, remote: str = "origin") -> bool:
+    """`git fetch --prune`, unqualified on purpose.
+
+    With an explicit refspec, `--prune` only prunes inside that refspec, and the merged
+    branch's remote-tracking ref lingers after GitHub deletes it on merge.
+    """
+    return _ok(["fetch", "--prune", remote], repo)
+
+
+def is_clean(repo: Path) -> bool:
+    try:
+        return not _run(["status", "--porcelain"], repo, what="status").strip()
+    except GitError:
+        return False
+
+
+def current_branch(repo: Path) -> str | None:
+    """The checked-out branch, or None when detached."""
+    try:
+        return _run(["symbolic-ref", "--quiet", "--short", "HEAD"], repo, what="HEAD").strip()
+    except GitError:
+        return None
+
+
+def can_refresh(repo: Path, branch: str) -> bool:
+    """Is it safe to fast-forward the primary checkout?
+
+    Only when it is clean and sitting on the base branch. `repo` is the user's own
+    checkout: rebasing a branch they happen to be on is worse than leaving it a commit
+    behind.
+    """
+    return is_clean(repo) and current_branch(repo) == branch
+
+
+def rebase(repo: Path, onto: str) -> bool:
+    return _ok(["rebase", onto], repo)
+
+
+def worktree_remove(repo: Path, worktree: Path) -> bool:
+    return _ok(["worktree", "remove", "--force", str(worktree)], repo)
+
+
+def worktree_prune(repo: Path) -> bool:
+    """Prune first, so `branch -D` is not refused by a worktree nobody is using."""
+    return _ok(["worktree", "prune"], repo)
+
+
+def delete_branch(repo: Path, branch: str) -> bool:
+    return _ok(["branch", "-D", branch], repo)
+
+
+def delete_remote_branch(repo: Path, branch: str, remote: str = "origin") -> bool:
+    """Best-effort: repositories with "automatically delete head branches" on have already
+    dropped it, and that failure means success."""
+    return _ok(["push", remote, "--delete", branch], repo)

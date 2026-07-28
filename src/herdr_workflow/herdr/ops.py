@@ -119,6 +119,11 @@ async def worktree_create(
     )
 
 
+async def worktree_remove(client: HerdrClient, workspace_id: str) -> None:
+    """Ask herdr to drop a worktree workspace and its checkout."""
+    await client.request("worktree.remove", {"workspace_id": workspace_id, "force": True})
+
+
 async def workspace_ids(client: HerdrClient) -> set[str]:
     """Every open workspace id.
 
@@ -170,6 +175,25 @@ async def pane_rename(client: HerdrClient, pane_id: str, label: str) -> None:
 
 async def pane_get(client: HerdrClient, pane_id: str) -> PaneResult:
     return await client.call("pane.get", PaneResult, {"pane_id": pane_id})
+
+
+async def pane_run(client: HerdrClient, pane_id: str, command: str) -> None:
+    """Type a command into a pane's shell and press Enter.
+
+    What the `herdr pane run` CLI does, in one socket call -- verified live: text and keys
+    together execute the command. Returns as soon as the keystrokes are delivered, which is
+    the point: `wq ship` hands a long-running command to a tab and frees its caller.
+
+    **The command is a shell line, so quoting is the caller's job.** There is no argv here
+    to keep arguments apart.
+
+    Bash had to sniff `pane run`'s stdout for JSON because it reported failures there while
+    still exiting 0. Over the socket an error is an error response, so that workaround is
+    gone.
+    """
+    await client.request(
+        "pane.send_input", {"pane_id": pane_id, "text": command, "keys": ["enter"]}
+    )
 
 
 # -- agents ------------------------------------------------------------------

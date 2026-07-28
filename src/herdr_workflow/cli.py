@@ -27,12 +27,14 @@ from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
 from herdr_workflow.workflows import (
+    brainstorming,
     building,
     cleanup,
     inbox,
     listing,
     planning,
     revising,
+    shipping,
     tabs,
 )
 from herdr_workflow.workflows import doctor as doctor_workflow
@@ -438,6 +440,104 @@ def cmd_revise(
         console.log(f'next:   wq revise {result.slug} "..."  |  wq ship {result.slug}')
         # Exit 0 whether or not the reviewer approved. Unlike `build`'s round cap, findings
         # here are the thing you asked for -- reading them is the next step, not an error.
+
+    _guard(body)
+
+
+@app.command("brainstorm")
+def cmd_brainstorm(
+    slug: Annotated[str, typer.Argument(help="Short name for the idea.")],
+    idea: Annotated[list[str], typer.Argument(help="The idea to explore.")],
+) -> None:
+    """Open a brainstorming pane with a running note."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> brainstorming.BrainstormResult:
+            async with connect(path) as client:
+                return await brainstorming.brainstorm(client, cfg, slug, " ".join(idea))
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "workspace_id": result.workspace_id,
+                        "pane_id": result.pane_id,
+                        "note": str(result.note),
+                        "created_note": result.created_note,
+                    },
+                    indent=2,
+                )
+            )
+
+    _guard(body)
+
+
+@app.command("ship")
+def cmd_ship(slug: Annotated[str, typer.Argument(help="The build to ship.")]) -> None:
+    """Run `wq go` in a shell tab in the inbox."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> shipping.ShipResult:
+            async with connect(path) as client:
+                return await shipping.ship(client, cfg, slug, Path.home())
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "workspace_id": result.workspace_id,
+                        "tab_label": result.tab_label,
+                        "pane_id": result.pane_id,
+                        "command": result.command,
+                        "created_tab": result.created_tab,
+                    },
+                    indent=2,
+                )
+            )
+
+    _guard(body)
+
+
+@app.command("go")
+def cmd_go(
+    slug: Annotated[str, typer.Argument(help="The build to push, merge and clean up.")],
+) -> None:
+    """Push, open a PR, wait for CI, merge, and clean up.
+
+    Blocks for the length of CI. Use `wq ship` unless you are already in a plain shell.
+    """
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def run() -> shipping.GoResult:
+            async with connect(path) as client:
+                return await shipping.go(client, cfg, slug)
+
+        result = _run(run())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "pr": result.pr,
+                        "branch": result.branch,
+                        "merged": result.merged,
+                    },
+                    indent=2,
+                )
+            )
 
     _guard(body)
 
