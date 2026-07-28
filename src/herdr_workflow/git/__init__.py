@@ -119,16 +119,39 @@ def resolve_base(repo: Path, remote: str = "origin") -> str:
     )
 
 
+def head_commit(worktree: Path) -> str:
+    """The commit `HEAD` points at.
+
+    `revise` takes this before its code turn so it can diff what that one turn produced.
+    """
+    return _run(["rev-parse", "HEAD"], worktree, what="rev-parse HEAD").strip()
+
+
 def write_diff(worktree: Path, base: str, out: Path) -> int:
     """Write `git diff <base>...HEAD` to `out`, returning its size in bytes.
 
-    Three-dot on purpose: the diff is the branch's own work against where it was cut from,
-    not against wherever the base has moved since.
+    **Three-dot on purpose:** the diff is the branch's own work against where it was cut
+    from, not against wherever the base has moved since. Pair with `write_delta`, which is
+    two-dot for an equally deliberate reason -- picking the wrong one of these gives you a
+    diff that looks entirely plausible and is answering a different question.
 
     An empty result is the signal that an agent edited files but never committed. That is
     a real and common failure, so the size comes back rather than being asserted here --
     the caller has the branch name and can say something useful about it.
     """
     text = _run(["diff", f"{base}...HEAD"], worktree, what=f"diff {base}...HEAD")
+    out.write_text(text)
+    return len(text)
+
+
+def write_delta(worktree: Path, since: str, out: Path) -> int:
+    """Write `git diff <since>..HEAD` to `out`, returning its size in bytes.
+
+    **Two-dot on purpose**, and this is the opposite case from `write_diff`. `since` is a
+    commit on this very branch -- the `HEAD` from before a turn -- so there is no
+    divergence to discount and a merge base would find `since` itself. What is wanted is
+    the plain "what changed since then", which is what two dots mean.
+    """
+    text = _run(["diff", f"{since}..HEAD"], worktree, what=f"diff {since}..HEAD")
     out.write_text(text)
     return len(text)

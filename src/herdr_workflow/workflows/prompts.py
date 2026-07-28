@@ -106,6 +106,31 @@ def review_code(diff_file: Path, plan_file: Path, review_file: Path) -> str:
     )
 
 
+def revise_code(comment: str) -> str:
+    return (
+        f"Change request: {comment}\n\n"
+        "Make that change in this worktree, following the repository's own conventions. "
+        "Run the tests. Commit. Do not push and do not open a pull request."
+    )
+
+
+def review_revision(
+    delta_file: Path, comment: str, diff_file: Path, plan_file: Path, review_file: Path
+) -> str:
+    """Scope the reviewer by instruction, not by withholding the rest of the diff.
+
+    A reviewer given only the delta is *structurally* blind to the call site the delta
+    forgot to update -- the regression lives outside the hunk that caused it. So it gets
+    the whole change for context and is told which part it is judging.
+    """
+    return (
+        f'Review {delta_file} — the change just made in response to: "{comment}". '
+        f"{diff_file} is the full change for context and {plan_file} is the plan. "
+        "Judge the delta. Raise findings outside it only where the delta caused them. "
+        f"Write your review to {review_file}. {REVIEW_PROTOCOL}"
+    )
+
+
 def fix_findings(review_file: Path) -> str:
     return (
         f"The reviewer raised findings in {review_file}. Fix every BLOCKING finding, re-run "

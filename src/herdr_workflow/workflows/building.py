@@ -39,6 +39,7 @@ class BuildPaths:
     plan: Path
     review: Path
     diff: Path
+    delta: Path
     env: Path
 
     @classmethod
@@ -51,6 +52,9 @@ class BuildPaths:
             # both files in the same directory, and the plan's review must survive.
             review=d / "code-review.md",
             diff=d / "diff.patch",
+            # Written by `revise` only: what one revision turn changed, where `diff` is the
+            # whole branch.
+            delta=d / "revise.patch",
             env=d / "build.env",
         )
 

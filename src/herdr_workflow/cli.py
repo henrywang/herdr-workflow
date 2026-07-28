@@ -26,7 +26,15 @@ from herdr_workflow.errors import WqError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
-from herdr_workflow.workflows import building, cleanup, inbox, listing, planning, tabs
+from herdr_workflow.workflows import (
+    building,
+    cleanup,
+    inbox,
+    listing,
+    planning,
+    revising,
+    tabs,
+)
 from herdr_workflow.workflows import doctor as doctor_workflow
 
 app = typer.Typer(
@@ -388,6 +396,48 @@ def cmd_build(
         # already printed the round-limit lines, so this adds no error block of its own.
         if not result.approved:
             raise typer.Exit(2)
+
+    _guard(body)
+
+
+@app.command("revise")
+def cmd_revise(
+    slug: Annotated[str, typer.Argument(help="The build to revise.")],
+    comment: Annotated[list[str], typer.Argument(help="The change you want.")],
+) -> None:
+    """Run one more code + review round on an existing build."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> revising.ReviseResult:
+            async with connect(path) as client:
+                return await revising.revise(client, cfg, slug, " ".join(comment))
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "worktree": str(result.worktree),
+                        "branch": result.branch,
+                        "delta": str(result.delta_file),
+                        "diff": str(result.diff_file),
+                        "review": str(result.review_file),
+                        "approved": result.approved,
+                    },
+                    indent=2,
+                )
+            )
+            return
+        console.log(f"delta:  {result.delta_file}")
+        console.log(f"diff:   {result.diff_file}")
+        console.log(f"review: {result.review_file}")
+        console.log(f'next:   wq revise {result.slug} "..."  |  wq ship {result.slug}')
+        # Exit 0 whether or not the reviewer approved. Unlike `build`'s round cap, findings
+        # here are the thing you asked for -- reading them is the next step, not an error.
 
     _guard(body)
 

@@ -17,8 +17,8 @@ from typer.testing import CliRunner
 
 from herdr_workflow import cli
 from herdr_workflow.workflows import building, prompts
+from tests.build_scenario import Scenario
 from tests.fake_herdr import FakeHerdr
-from tests.unit.test_building import Scenario
 
 runner = CliRunner()
 
@@ -200,6 +200,35 @@ def test_build_without_a_plan_exits_one(wq_env: Path, threaded_fake: FakeHerdr, 
     result = runner.invoke(cli.app, ["build", "nothing-here", str(repo)])
     assert result.exit_code == 1
     assert "no plan at" in result.output
+
+
+def test_revise_exits_zero_even_when_the_reviewer_has_findings(
+    wq_env: Path, threaded_fake: FakeHerdr, repo: Path
+) -> None:
+    """The contract `build` does not share. Findings from a revise are the thing you asked
+    for -- reading them is the next step, not a failure. A refactor for "consistency" with
+    `build`'s exit 2 would break the router's handling of a perfectly normal outcome."""
+    paths = building.BuildPaths.for_slug(wq_env, "x")
+    paths.dir.mkdir(parents=True, exist_ok=True)
+    paths.plan.write_text("# Plan\n\nAdd a function.\n")
+    Scenario(
+        threaded_fake,
+        paths,
+        repo,
+        reviews=[prompts.VERDICT_APPROVED, prompts.VERDICT_CHANGES],
+    )
+    assert runner.invoke(cli.app, ["build", "x", str(repo)]).exit_code == 0
+
+    result = runner.invoke(cli.app, ["revise", "x", "rename", "the", "function"])
+    assert result.exit_code == 0
+    assert "reviewer has findings" in result.output
+    assert "revise.patch" in result.output
+
+
+def test_revise_without_a_build_exits_one(wq_env: Path, threaded_fake: FakeHerdr) -> None:
+    result = runner.invoke(cli.app, ["revise", "nothing-here", "change something"])
+    assert result.exit_code == 1
+    assert "no build for nothing-here" in result.output
 
 
 def test_bad_config_reports_cleanly(tmp_path: Path) -> None:
