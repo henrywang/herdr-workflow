@@ -98,32 +98,56 @@ class FakeHerdr:
             self._server = None
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        """Answer one request, then close -- exactly what herdr 0.7.5 does.
+
+        This is not a simplification: the real server closes after a single response, and
+        a fake that stayed open would let a client with a latent
+        multiple-requests-per-connection assumption pass its tests and fail in the field.
+        The one exception is `events.subscribe`, which holds the connection open.
+        """
         self._writers.append(writer)
         try:
-            while True:
-                line = await reader.readline()
-                if not line:
-                    return
-                await self._handle_line(line, writer)
+            line = await reader.readline()
+            if not line:
+                return
+            subscribed = await self._handle_line(line, writer)
+            if not subscribed:
+                return
+            # A subscription keeps the socket open until the client goes away.
+            await reader.read()
         except (ConnectionResetError, BrokenPipeError):
             return
         finally:
             if writer in self._writers:
                 self._writers.remove(writer)
+            writer.close()
 
-    async def _handle_line(self, line: bytes, writer: asyncio.StreamWriter) -> None:
+    async def _handle_line(self, line: bytes, writer: asyncio.StreamWriter) -> bool:
+        """Answer one request. Returns True if the connection should stay open."""
         try:
             request = json.loads(line)
         except json.JSONDecodeError:
-            return
+            # The real server answers malformed input with an error carrying id "".
+            writer.write(
+                json.dumps(
+                    {
+                        "id": "",
+                        "error": {"code": "invalid_request", "message": "invalid request"},
+                    }
+                ).encode()
+                + b"\n"
+            )
+            await writer.drain()
+            return False
         self.received.append(request)
 
         method = request.get("method", "")
         if method in self.close_on_methods:
             writer.close()
-            return
+            return False
         if method in self.drop_methods:
-            return  # never answer: exercises the client's request timeout
+            await asyncio.sleep(3600)  # never answer: exercises the client's timeout
+            return False
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.malformed_before_response:
@@ -132,18 +156,21 @@ class FakeHerdr:
         handler = self._handlers.get(method)
         body: dict[str, Any]
         if handler is None:
+            # The real server reports an unknown method as invalid_request with id "".
             body = {
-                "id": request.get("id"),
-                "error": {"code": "unknown_method", "message": f"no handler for {method}"},
+                "id": "",
+                "error": {"code": "invalid_request", "message": f"unknown variant `{method}`"},
             }
         else:
             result = handler(request.get("params") or {})
             if asyncio.iscoroutine(result):
                 result = await result
             if isinstance(result, dict) and "__error__" in result:
-                body = {"id": request.get("id"), "error": result["__error__"]}
+                body = {"id": "", "error": result["__error__"]}
             else:
                 body = {"id": request.get("id"), "result": result}
 
         writer.write(json.dumps(body).encode() + b"\n")
         await writer.drain()
+        # events.subscribe is the one method that holds the connection open afterwards.
+        return method == "events.subscribe" and "error" not in body

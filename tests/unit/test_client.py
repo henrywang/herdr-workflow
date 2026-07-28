@@ -1,8 +1,14 @@
-"""Client tests, run against a real unix socket speaking the real framing."""
+"""Client tests, run against a real unix socket speaking the real framing.
+
+The fake closes the connection after each response, because herdr 0.7.5 does. A fake that
+stayed open would let a client with a latent multiple-requests-per-connection assumption
+pass here and fail against the real daemon -- which is exactly what happened once.
+"""
 
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,59 +25,39 @@ async def test_ping_round_trip(client: HerdrClient) -> None:
 
 
 async def test_params_always_sent_even_when_empty(client: HerdrClient, fake: FakeHerdr) -> None:
-    """The schema marks `params` required even for EmptyParams methods."""
+    """Verified against herdr: omitting `params` returns invalid_request
+    "missing field `params`", even for methods that take none."""
     await client.ping()
     assert fake.calls("ping")[0]["params"] == {}
 
 
-async def test_request_ids_are_unique(client: HerdrClient, fake: FakeHerdr) -> None:
-    """We hold one connection open, so unlike the herdr CLI we cannot reuse ids."""
+async def test_each_request_uses_its_own_connection(client: HerdrClient, fake: FakeHerdr) -> None:
+    """The server closes after one response, so a second call must reconnect.
+
+    This is the regression test for the bug that shipped: a long-lived client answered
+    the first request and then failed every one after it.
+    """
     await client.ping()
     await client.ping()
-    ids = [r["id"] for r in fake.calls("ping")]
-    assert len(set(ids)) == 2
+    snapshot_calls = len(fake.calls("ping"))
+    assert snapshot_calls == 2
 
 
-async def test_error_response_becomes_api_error(client: HerdrClient, fake: FakeHerdr) -> None:
-    fake.on_error("agent.start", "agent_pane_busy", "pane is busy")
-    with pytest.raises(ApiError) as caught:
-        await client.request("agent.start", {"target": "w1:p1"})
-    # The code is kept as a field because retry logic branches on it, and matching
-    # against a human-readable message is how that breaks on the next herdr release.
-    assert caught.value.code == "agent_pane_busy"
+async def test_sequential_requests_all_succeed(client: HerdrClient, fake: FakeHerdr) -> None:
+    fake.on("a.one", {"type": "one"})
+    fake.on("a.two", {"type": "two"})
+    assert b"one" in bytes(await client.request("a.one"))
+    assert b"two" in bytes(await client.request("a.two"))
+    assert b"one" in bytes(await client.request("a.one"))
 
 
-async def test_event_between_request_and_response_is_not_mistaken_for_it(
+async def test_concurrent_requests_each_get_their_own_answer(
     client: HerdrClient, fake: FakeHerdr
 ) -> None:
-    """The test that justifies the client's whole shape.
-
-    After events.subscribe the server pushes event lines onto the same connection. A
-    write-then-read-one-line client reads the event where it expects its own response and
-    mis-attributes it. Here the event lands first and the response must still arrive
-    intact.
-    """
-    seen: list[str] = []
-    client.on_event(lambda name, _data: seen.append(name))
-
-    async def answer(_params: object) -> dict[str, Any]:
-        await fake.push_event("workspace_created", {"workspace_id": "w9"})
-        await asyncio.sleep(0.01)
-        return {"type": "pong", "version": "0.0.0-test", "protocol": 17}
-
-    fake.on("ping", answer)
-    pong = await client.ping()
-
-    assert pong.protocol == 17
-    assert seen == ["workspace_created"]
-
-
-async def test_concurrent_requests_correlate_by_id(client: HerdrClient, fake: FakeHerdr) -> None:
-    """Two requests in flight; the slower one answers first."""
-    order = {"slow": 0.05, "fast": 0.0}
+    """Separate connections, so concurrency needs no id correlation."""
 
     async def slow(_p: object) -> dict[str, Any]:
-        await asyncio.sleep(order["slow"])
+        await asyncio.sleep(0.05)
         return {"type": "slow"}
 
     fake.on("a.slow", slow)
@@ -79,18 +65,61 @@ async def test_concurrent_requests_correlate_by_id(client: HerdrClient, fake: Fa
 
     slow_task = asyncio.create_task(client.request("a.slow"))
     await asyncio.sleep(0.01)
-    fast = await client.request("a.fast")
-    assert b"fast" in bytes(fast)
+    assert b"fast" in bytes(await client.request("a.fast"))
     assert b"slow" in bytes(await slow_task)
 
 
-async def test_malformed_line_does_not_kill_the_connection(
+async def test_error_response_becomes_api_error(client: HerdrClient, fake: FakeHerdr) -> None:
+    fake.on_error("agent.start", "agent_pane_busy", "pane is busy")
+    with pytest.raises(ApiError) as caught:
+        await client.request("agent.start", {"target": "w1:p1"})
+    # The code is kept as a field because retry logic branches on it, and matching against
+    # a human-readable message is how that breaks on the next herdr release.
+    assert caught.value.code == "agent_pane_busy"
+
+
+async def test_error_with_empty_id_still_raises(client: HerdrClient, fake: FakeHerdr) -> None:
+    """herdr sets id to "" on requests it could not parse.
+
+    With one request per connection there is nothing to correlate, so an unusable id must
+    not stop the error surfacing.
+    """
+    with pytest.raises(ApiError) as caught:
+        await client.request("no.such.method")
+    assert caught.value.code == "invalid_request"
+
+
+async def test_subscription_keeps_its_connection_and_streams_events(
     client: HerdrClient, fake: FakeHerdr
 ) -> None:
-    """A shape we cannot parse is survivable; dying on it is not."""
+    """events.subscribe is the one method that does not close after its ack."""
+    fake.on("events.subscribe", {"type": "subscription_started"})
+
+    async with client.subscribe([{"type": "workspace.created"}]) as events:
+        await asyncio.sleep(0.05)
+        await fake.push_event("workspace.created", {"workspace_id": "w9"})
+        name, _data = await anext(aiter(events))
+
+    assert name == "workspace.created"
+
+
+async def test_subscription_error_is_raised_not_swallowed(
+    client: HerdrClient, fake: FakeHerdr
+) -> None:
+    """A bad subscription is rejected at the ack; herdr then closes the connection."""
+    fake.on_error("events.subscribe", "invalid_request", "missing field `pane_id`")
+    with pytest.raises(ApiError):
+        async with client.subscribe([{"type": "pane.agent_status_changed"}]):
+            pass
+
+
+async def test_unparseable_response_is_a_protocol_error(
+    client: HerdrClient, fake: FakeHerdr
+) -> None:
+    """One request per connection means a garbled line is the answer, not noise to skip."""
     fake.malformed_before_response = True
-    pong = await client.ping()
-    assert pong.protocol == 17
+    with pytest.raises(ProtocolError):
+        await client.ping()
 
 
 async def test_unanswered_request_times_out_with_a_useful_message(
@@ -103,20 +132,19 @@ async def test_unanswered_request_times_out_with_a_useful_message(
     assert "did not answer ping" in caught.value.message
 
 
-async def test_server_disconnect_fails_pending_requests(
+async def test_server_closing_without_answering_is_explained(
     client: HerdrClient, fake: FakeHerdr
 ) -> None:
     fake.close_on_methods.add("ping")
-    with pytest.raises(HerdrUnavailable):
-        await client.ping()
-
-
-async def test_missing_socket_explains_how_to_start_herdr(tmp_path: object) -> None:
-    from pathlib import Path
-
-    c = HerdrClient(Path(str(tmp_path)) / "nope.sock")
     with pytest.raises(HerdrUnavailable) as caught:
-        await c.connect()
+        await client.ping()
+    assert "closed the connection" in caught.value.message
+
+
+async def test_missing_socket_explains_how_to_start_herdr(socket_dir: Path) -> None:
+    c = HerdrClient(socket_dir / "nope.sock")
+    with pytest.raises(HerdrUnavailable) as caught:
+        await c.ping()
     assert "herdr" in (caught.value.fix or "")
 
 

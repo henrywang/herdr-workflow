@@ -43,14 +43,10 @@ async def fake(socket_dir: Path) -> AsyncIterator[FakeHerdr]:
         await server.stop()
 
 
-@pytest_asyncio.fixture
-async def client(fake: FakeHerdr) -> AsyncIterator[HerdrClient]:
-    c = HerdrClient(fake.socket_path, timeout=2.0)
-    await c.connect()
-    try:
-        yield c
-    finally:
-        await c.close()
+@pytest.fixture
+def client(fake: FakeHerdr) -> HerdrClient:
+    """A client pointed at the fake. It holds no connection -- each request makes one."""
+    return HerdrClient(fake.socket_path, timeout=2.0)
 
 
 @pytest.fixture

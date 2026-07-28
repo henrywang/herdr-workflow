@@ -1,34 +1,32 @@
-"""Async client for the herdr socket API.
+"""Client for the herdr socket API.
 
-Newline-delimited JSON over a unix socket, no handshake. See docs/protocol-framing.md for
-how that was established.
+Newline-delimited JSON over a unix socket, no handshake.
 
-The shape of this class is forced by one fact: after `events.subscribe`, the server
-pushes event lines onto the same connection, interleaved with responses. A
-write-then-read-one-line client would read an event where it expected its own response
-and mis-attribute it. So there is a background reader, a pending-futures map keyed on
-request id, and a separate path for lines that carry no id.
+**The server answers exactly one request per connection, then closes it.** Verified
+against herdr 0.7.5 -- a second write raises BrokenPipeError, and pipelining two requests
+yields one response followed by a close. That makes a request a self-contained
+connect/write/read/close, with no id correlation to do: whatever comes back on this
+connection is the answer to the one thing we sent.
 
-That structure also gives concurrent in-flight requests, whether or not the server needs
-them.
+The single exception is `events.subscribe`, which acks and then holds the connection open
+streaming event lines. That is `subscribe()`, which owns its own connection for as long as
+the caller iterates it.
+
+See docs/protocol-framing.md for the full set of verified behaviours.
 """
 
 from __future__ import annotations
 
 import asyncio
-import itertools
-import os
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import msgspec
 
 from herdr_workflow.errors import ApiError, HerdrUnavailable, ProtocolError
 from herdr_workflow.protocol.messages import Envelope, Pong, Snapshot, SnapshotResult
-
-T = TypeVar("T")
 
 _DEFAULT_TIMEOUT = 30.0
 
@@ -36,36 +34,53 @@ _decoder = msgspec.json.Decoder(Envelope)
 _encoder = msgspec.json.Encoder()
 
 
-class HerdrClient:
-    """One connection, many requests.
+def _decode_line(line: bytes, method: str) -> Envelope:
+    try:
+        return _decoder.decode(line)
+    except msgspec.DecodeError as exc:
+        raise ProtocolError(
+            f"could not parse herdr's response to {method}",
+            why=f"{exc}: {line[:200]!r}",
+        ) from exc
 
-    Not reentrant across event loops; construct one per `asyncio.run`.
+
+def _check(envelope: Envelope, method: str) -> msgspec.Raw:
+    """Turn a response envelope into a result, or raise.
+
+    Note the server sets `id` to "" on requests it could not parse, so the id is not
+    usable for correlation on the error path. With one request per connection there is
+    nothing to correlate anyway.
+    """
+    if envelope.error is not None:
+        raise ApiError(envelope.error.code, envelope.error.message, method=method)
+    if not envelope.has_result:
+        raise ProtocolError(
+            f"herdr answered {method} with neither result nor error",
+            why="the response envelope violated the protocol contract",
+        )
+    return envelope.result
+
+
+class HerdrClient:
+    """Talks to the herdr API socket, one connection per request.
+
+    Cheap to construct and hold; it owns no connection between calls.
     """
 
     def __init__(self, socket_path: Path, *, timeout: float = _DEFAULT_TIMEOUT) -> None:
         self.socket_path = socket_path
         self.timeout = timeout
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
-        self._read_task: asyncio.Task[None] | None = None
-        self._pending: dict[str, asyncio.Future[Envelope]] = {}
-        self._event_handlers: list[Callable[[str, msgspec.Raw], None]] = []
-        self._ids = itertools.count(1)
-        # Unique per connection. The herdr CLI reuses ids like "cli:agent:start" because
-        # it opens a connection per request; we hold one open, so uniqueness is ours to
-        # guarantee.
-        self._prefix = f"wq{os.getpid()}"
 
-    # -- lifecycle ---------------------------------------------------------
+    # -- connection --------------------------------------------------------
 
-    async def connect(self) -> None:
+    async def _open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         if not self.socket_path.exists():
             raise HerdrUnavailable(
                 f"herdr socket not found at {self.socket_path}",
                 why="the herdr server does not appear to be running",
             )
         try:
-            self._reader, self._writer = await asyncio.open_unix_connection(self.socket_path)
+            return await asyncio.open_unix_connection(self.socket_path)
         except (ConnectionRefusedError, FileNotFoundError) as exc:
             # A stale socket file outlives the process that made it, so "the file exists"
             # is not the same as "someone is listening".
@@ -78,77 +93,18 @@ class HerdrClient:
                 f"could not connect to herdr at {self.socket_path}", why=str(exc)
             ) from exc
 
-        self._read_task = asyncio.create_task(self._read_loop())
+    @staticmethod
+    async def _shutdown(writer: asyncio.StreamWriter) -> None:
+        writer.close()
+        # The server has usually closed first; there is nothing to do about it.
+        with suppress(OSError, asyncio.CancelledError):
+            await writer.wait_closed()
 
-    async def close(self) -> None:
-        if self._read_task is not None:
-            self._read_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._read_task
-            self._read_task = None
-
-        if self._writer is not None:
-            self._writer.close()
-            # Closing a connection the server already dropped raises; there is nothing
-            # left to do about it either way.
-            with suppress(OSError, asyncio.CancelledError):
-                await self._writer.wait_closed()
-            self._writer = None
-        self._reader = None
-
-        self._fail_pending(HerdrUnavailable("connection closed", why="client shut down"))
-
-    # -- reading -----------------------------------------------------------
-
-    async def _read_loop(self) -> None:
-        assert self._reader is not None
-        try:
-            while True:
-                line = await self._reader.readline()
-                if not line:
-                    self._fail_pending(
-                        HerdrUnavailable(
-                            "herdr closed the connection",
-                            why="the server went away mid-request",
-                        )
-                    )
-                    return
-                self._dispatch(line)
-        except asyncio.CancelledError:
-            raise
-        except OSError as exc:
-            self._fail_pending(HerdrUnavailable("lost connection to herdr", why=str(exc)))
-
-    def _dispatch(self, line: bytes) -> None:
-        try:
-            envelope = _decoder.decode(line)
-        except msgspec.DecodeError:
-            # One unparseable line must not take the connection down: a future protocol
-            # may add a message shape we do not model, and dropping it is survivable
-            # where dying is not. Requests still in flight will time out and say so.
-            return
-
-        if envelope.id is None:
-            # No id means a pushed event, not a response to anything we sent.
-            if envelope.event is not None and envelope.has_data:
-                for handler in self._event_handlers:
-                    handler(envelope.event, envelope.data)
-            return
-
-        future = self._pending.pop(envelope.id, None)
-        if future is None or future.done():
-            # A response to a request that already timed out. Nothing to do with it.
-            return
-        future.set_result(envelope)
-
-    def _fail_pending(self, exc: Exception) -> None:
-        for future in self._pending.values():
-            if not future.done():
-                future.set_exception(exc)
-        self._pending.clear()
-
-    def on_event(self, handler: Callable[[str, msgspec.Raw], None]) -> None:
-        self._event_handlers.append(handler)
+    @staticmethod
+    def _frame(request_id: str, method: str, params: dict[str, Any] | None) -> bytes:
+        # `params` is required by the schema even when the method takes none. Verified:
+        # omitting it returns invalid_request "missing field `params`".
+        return _encoder.encode({"id": request_id, "method": method, "params": params or {}}) + b"\n"
 
     # -- requests ----------------------------------------------------------
 
@@ -159,47 +115,44 @@ class HerdrClient:
         *,
         timeout: float | None = None,
     ) -> msgspec.Raw:
-        """Send a request, wait for its response, return the raw result.
+        """Send one request on its own connection and return the raw result.
 
-        Raises ApiError when the server answers with an error, so callers that care about
-        a specific code (`agent_pane_busy`, `agent_name_taken`) can catch it by code
-        rather than by parsing a message.
+        Raises ApiError when the server answers with an error, so callers that branch on a
+        specific code (`agent_pane_busy`, `agent_name_taken`) can match the code rather
+        than parse a message.
         """
-        if self._writer is None:
-            raise HerdrUnavailable("not connected to herdr", why="connect() was not called")
-
-        request_id = f"{self._prefix}-{next(self._ids)}"
-        future: asyncio.Future[Envelope] = asyncio.get_running_loop().create_future()
-        self._pending[request_id] = future
-
-        # `params` is required by the schema even when the method takes none: send {},
-        # never omit the key.
-        payload = _encoder.encode({"id": request_id, "method": method, "params": params or {}})
-        self._writer.write(payload + b"\n")
-
+        limit = timeout or self.timeout
         try:
-            await self._writer.drain()
-            envelope = await asyncio.wait_for(future, timeout or self.timeout)
+            return await asyncio.wait_for(self._exchange(method, params), limit)
         except TimeoutError as exc:
-            self._pending.pop(request_id, None)
             raise ProtocolError(
-                f"herdr did not answer {method} within {timeout or self.timeout:.0f}s",
-                why="the request was written but no matching response arrived",
+                f"herdr did not answer {method} within {limit:.0f}s",
+                why="the request was sent but no response arrived",
             ) from exc
+
+    async def _exchange(self, method: str, params: dict[str, Any] | None) -> msgspec.Raw:
+        reader, writer = await self._open()
+        try:
+            # The id is echoed back but never needed: one request per connection means
+            # there is nothing else the response could belong to. It is still sent
+            # because the schema requires it, and it shows up in herdr's server log,
+            # where a descriptive value is worth more than a unique one.
+            writer.write(self._frame(f"wq:{method}", method, params))
+            await writer.drain()
+            line = await reader.readline()
         except OSError as exc:
-            self._pending.pop(request_id, None)
             raise HerdrUnavailable(f"failed to send {method}", why=str(exc)) from exc
+        finally:
+            await self._shutdown(writer)
 
-        if envelope.error is not None:
-            raise ApiError(envelope.error.code, envelope.error.message, method=method)
-        if not envelope.has_result:
-            raise ProtocolError(
-                f"herdr answered {method} with neither result nor error",
-                why="the response envelope violated the protocol contract",
+        if not line:
+            raise HerdrUnavailable(
+                f"herdr closed the connection without answering {method}",
+                why="the server accepted the request then went away",
             )
-        return envelope.result
+        return _check(_decode_line(line, method), method)
 
-    async def call(
+    async def call[T](
         self,
         method: str,
         result_type: type[T],
@@ -212,13 +165,61 @@ class HerdrClient:
         try:
             return msgspec.json.decode(raw, type=result_type)
         except msgspec.ValidationError as exc:
-            # Almost always a protocol drift: herdr changed a shape we hard-coded. Say so,
-            # and point at the check that would have caught it earlier.
+            # Almost always protocol drift: herdr changed a shape we hard-coded. Say so,
+            # and name the command that diagnoses it.
             raise ProtocolError(
                 f"could not decode the result of {method}: {exc}",
                 why="the server's response did not match the shape wq expects",
                 fix="run: wq doctor  (this usually means a herdr protocol mismatch)",
             ) from exc
+
+    # -- events ------------------------------------------------------------
+
+    @asynccontextmanager
+    async def subscribe(
+        self, subscriptions: Sequence[dict[str, Any]]
+    ) -> AsyncGenerator[AsyncIterator[tuple[str, msgspec.Raw]]]:
+        """Subscribe to events, yielding an iterator of `(event_name, data)`.
+
+        The one method that keeps its connection: the ack is
+        `{"type": "subscription_started"}` and event lines follow on the same socket,
+        each carrying `event` and `data` but no `id`.
+
+        Subscription names are **dotted** -- `workspace.created`,
+        `pane.agent_status_changed` -- and are a different vocabulary from the
+        underscored names `events.wait` matches on. Some require extra keys; a
+        `pane.agent_status_changed` subscription without `pane_id` is rejected.
+        """
+        reader, writer = await self._open()
+        try:
+            writer.write(
+                self._frame(
+                    "wq:events.subscribe",
+                    "events.subscribe",
+                    {"subscriptions": list(subscriptions)},
+                )
+            )
+            await writer.drain()
+            ack = await asyncio.wait_for(reader.readline(), self.timeout)
+            if not ack:
+                raise HerdrUnavailable(
+                    "herdr closed the connection instead of starting a subscription",
+                    why="the server went away before acknowledging",
+                )
+            _check(_decode_line(ack, "events.subscribe"), "events.subscribe")
+
+            async def events() -> AsyncIterator[tuple[str, msgspec.Raw]]:
+                while True:
+                    line = await reader.readline()
+                    if not line:
+                        return  # server closed the stream
+                    envelope = _decode_line(line, "events.subscribe")
+                    if envelope.event is not None and envelope.has_data:
+                        yield envelope.event, envelope.data
+
+            yield events()
+        finally:
+            await self._shutdown(writer)
 
     # -- convenience -------------------------------------------------------
 
@@ -234,9 +235,10 @@ class HerdrClient:
 async def connect(
     socket_path: Path, *, timeout: float = _DEFAULT_TIMEOUT
 ) -> AsyncGenerator[HerdrClient]:
-    client = HerdrClient(socket_path, timeout=timeout)
-    await client.connect()
-    try:
-        yield client
-    finally:
-        await client.close()
+    """Yield a client.
+
+    There is no connection to set up or tear down -- each request makes its own -- but
+    call sites read better as a scope, and this is where pooling would go if the server
+    ever keeps connections alive.
+    """
+    yield HerdrClient(socket_path, timeout=timeout)

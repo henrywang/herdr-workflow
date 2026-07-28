@@ -214,6 +214,36 @@ and a separate event path — see
 
 ---
 
+## 11. Your fake server is only as right as your reading of the protocol
+
+**Test:** `tests/integration/test_live_daemon.py`
+
+Not a herdr behavior — a *method* failure, and the most transferable thing here.
+
+The client was built with a background reader, a pending-futures map, and id correlation,
+because the documentation describes events arriving on the same connection. 27 unit tests
+passed against a fake daemon built from the same reading.
+
+Then it met a real daemon and failed on its second request. **herdr answers one request
+per connection and then closes it.** `wq list` worked because it makes exactly one call;
+`wq doctor` makes two, and the second died.
+
+The fake could never have caught it, because the fake and the client were wrong the same
+way. A test suite built entirely on your own model of a system tests your consistency,
+not your correctness.
+
+**What this changes:** every phase needs at least one test against the real daemon before
+it counts as done, and the fake gets corrected the moment reality disagrees — the fake
+now closes after each response, so a client that ever regresses to a long-lived
+connection fails in unit tests too.
+
+The related discovery, from the same session: `events.subscribe` names events **dotted**
+(`workspace.created`) while `events.wait` names them **underscored**
+(`workspace_created`). Both are in the schema, as separate definitions. Reading one and
+assuming the other is a five-minute bug that looks like a twenty-minute one.
+
+---
+
 ## Rules of thumb
 
 1. **Confirm effects, do not infer them.** Prompt delivery via `state_change_seq`; turn
@@ -225,3 +255,5 @@ and a separate event path — see
 5. **Screen state and agent state are different things.** Events cover the second only.
 6. **Assume a concurrent copy of yourself is running.** Several of these bugs exist only
    because two commands overlapped.
+7. **Verify against the real thing before believing your own test suite.** A fake built
+   from your reading of the docs cannot disprove your reading of the docs.

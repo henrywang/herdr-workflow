@@ -7,7 +7,12 @@ Sources: [herdr socket API docs](https://herdr.dev/docs/socket-api/), the bundle
 (`herdr api schema --json`), and `~/.config/herdr/herdr-server.log`.
 
 Status of each claim is marked **[docs]**, **[schema]**, **[log]**, or **[verified]**
-(confirmed against a running daemon).
+(confirmed against a running daemon — herdr **0.7.5**, protocol **17**).
+
+> **Read this first.** The single most important fact is not in the docs: **the server
+> answers one request per connection and then closes it.** A long-lived client works for
+> exactly one call and then fails everything after it. We shipped that bug and caught it
+> the first time we ran against a real daemon.
 
 ---
 
@@ -45,9 +50,31 @@ This is what `[herdr] socket = "auto"` in the config resolves through.
 
 ---
 
+## One request per connection
+
+**[verified]** The server writes one response and closes the socket. Three probes, all
+against herdr 0.7.5:
+
+| Probe | Result |
+|-------|--------|
+| Send `ping`, read response, send `ping` again | second write raises **`BrokenPipeError`** |
+| Pipeline two requests before reading | one response, then **close** |
+| Read again after a response | immediate **EOF** |
+
+So a request is a self-contained connect → write → read one line → close. **There is no id
+correlation to do**: whatever comes back is the answer to the one thing you sent. This is
+presumably also why the `herdr` CLI can reuse ids like `cli:agent:start`.
+
+The only exception is `events.subscribe` — see below.
+
+This makes the client much simpler than the docs imply, and it means anything wanting
+concurrency just opens more connections.
+
+---
+
 ## Framing
 
-**[docs]** Newline-delimited JSON. Each request and each response occupies exactly one
+**[verified]** Newline-delimited JSON. Each request and each response occupies exactly one
 line. There is **no handshake** — clients send requests immediately on connect.
 
 ### Request
@@ -77,73 +104,94 @@ the method takes none — send `{}`, do not omit the key. Methods using `EmptyPa
 A response carries **either** `result` or `error`, never both. Discriminate on key
 presence.
 
----
+**[verified] Errors from unparseable requests carry `"id": ""`, not your id.** Every
+malformed-input probe came back with an empty id:
 
-## Request ids and correlation
+```json
+{"id":"","error":{"code":"invalid_request","message":"invalid request: missing field `params` at line 1 column 30"}}
+```
 
-**[docs]** `id` correlates responses to requests.
+So the id is unusable for correlation exactly when you would most want it. Harmless here
+— one request per connection — but fatal to any design that multiplexes.
 
-**[log]** The `herdr` CLI uses human-readable, **non-unique** ids — `cli:pane:rename`,
-`cli:agent:start`, and `cli:agent:start` again minutes later.
-
-**[inference, unverified]** That is presumably safe because the CLI opens one connection
-per request, so no two live requests ever share an id. We have not confirmed that, and it
-tells us nothing about whether the server requires uniqueness.
-
-**We generate unique ids anyway.** We hold one long-lived connection, so uniqueness is
-ours to guarantee regardless of what the server tolerates.
-
-**[docs]** Whether multiple requests may be in flight on one connection is *not*
-documented. See "Open questions" below.
+**[verified]** An unknown method is `invalid_request`, **not** `unknown_method`, and the
+message enumerates every valid method. Malformed JSON gets an error response too, then the
+connection closes.
 
 ---
 
-## Events arrive on the same connection, without ids
+## Request ids
 
-**[docs]** After `events.subscribe`:
+**[verified]** The id is echoed back on success and ignored otherwise. Since there is
+nothing to correlate, uniqueness buys nothing — we send a descriptive `wq:<method>`,
+which is worth more in herdr's server log than a counter would be. This matches what the
+`herdr` CLI does (`cli:pane:rename`, `cli:agent:start`).
 
-> "The first response acknowledges the subscription. Later lines are pushed events."
-> "Events arrive as additional JSON lines on the same connection without request IDs."
+---
 
-**This is the fact that determines the client's shape.** Because unsolicited lines can
-arrive between a request and its response, the client cannot be a
-write-then-read-one-line loop. It needs:
+## Events: the one long-lived connection
 
-- a background read task consuming lines continuously
-- a pending-futures map keyed on request `id`
-- an event dispatch path for lines with no `id`
+**[verified]** `events.subscribe` acks and then **holds the connection open**:
 
-That structure also gives concurrent in-flight requests for free, whether or not the
-server needs it.
+```json
+→ {"id":"d1","method":"events.subscribe","params":{"subscriptions":[{"type":"workspace.created"}]}}
+← {"id":"d1","result":{"type":"subscription_started"}}
+  … connection stays open, event lines follow …
+```
 
-### Docs/schema discrepancy on subscription shape
+Event lines carry `event` and `data` and **no `id`**.
 
-**[docs]** shows `{"type": "pane.agent_status_changed", "pane_id": ...}`.
-**[schema]** `EventMatch` uses `{"event": "workspace_created", "workspace_id": ...}`.
+### Two different event vocabularies — this will catch you
 
-**Trust the shipped schema** — it is versioned with the binary (protocol 17); the docs
-site is not. Confirm against a live daemon before relying on either.
+**[verified]** `events.subscribe` and `events.wait` do not name events the same way:
+
+| Method | Schema type | Key | Naming |
+|--------|-------------|-----|--------|
+| `events.subscribe` | `Subscription` | `type` | **dotted**: `workspace.created` |
+| `events.wait` | `EventMatch` | `event` | **underscored**: `workspace_created` |
+
+Sending `{"event": "workspace_created"}` to `events.subscribe` fails with *missing field
+`type`*. Sending `{"type": "workspace_created"}` fails with *unknown variant
+`workspace_created`, expected one of `workspace.created`, …*.
+
+**[verified]** Some subscriptions need extra keys: `{"type":
+"pane.agent_status_changed"}` alone is rejected with *missing field `pane_id`*.
+
+For the record: the docs site was right about `type` and we misread the schema by quoting
+`EventMatch` where `Subscription` applies. Both are in the schema; they are different
+definitions.
 
 ---
 
 ## Protocol version
 
-**[schema]** `ping` returns `{type: "pong", version: <string>, protocol: <uint32>,
-capabilities?: ...}`. `version` and `protocol` are required.
+**[verified]** `ping` returns `{type: "pong", version, protocol, capabilities}`. Against
+herdr 0.7.5:
+
+```json
+{"id":"a1","result":{"type":"pong","version":"0.7.5","protocol":17,"capabilities":{"live_handoff":true,…}}}
+```
 
 This is how `wq doctor` compares the running server against our pinned protocol. The
-bundled schema at the time of writing reports `protocol: 17, schema_version: 1`, with 89
-request methods.
+bundled schema reports `protocol: 17, schema_version: 1`, with 89 request methods.
 
 ---
 
-## Open questions — resolve against a live daemon
+## Resolved
 
-- [ ] Are concurrent in-flight requests on one connection actually accepted, and do ids
-      come back out of order? Test: send two requests before reading either response.
-      *(Our client works either way; this only tells us how hard to lean on it.)*
-- [ ] Is there a maximum line length or message size?
-- [ ] What happens on malformed JSON — error response, or connection close?
-- [ ] Does the server close idle connections?
-- [ ] Does `events.subscribe` echo the subscription in its ack?
-- [ ] Confirm `EventMatch` uses `event` (schema) rather than `type` (docs).
+- [x] **Concurrent in-flight requests on one connection?** No — the server closes after
+      one response. Concurrency means more connections.
+- [x] **Malformed JSON?** Error response with `id: ""`, then close.
+- [x] **Does `events.subscribe` keep the connection open?** Yes, and its ack is
+      `{"type": "subscription_started"}`.
+- [x] **`event` or `type` for subscriptions?** `type`, dotted — and `events.wait` uses
+      `event`, underscored. Different vocabularies.
+- [x] **Is `params` really required?** Yes, verified: omitting it returns *missing field
+      `params`*.
+
+## Still open
+
+- [ ] Is there a maximum line length or message size? (`session.snapshot` on a big session
+      is the realistic test.)
+- [ ] Does the server close an idle *subscription* connection, and does it need keepalive?
+- [ ] Do subscription connections survive `herdr server reload-config`?
