@@ -7,7 +7,7 @@ their output. This file records how parity is checked and what has been checked 
 Parity cannot be a unit test: it needs the Bash script, a real herdr daemon, and real
 state. So it is a procedure, run at the end of each phase.
 
-**Last run:** Phase 3, against herdr 0.7.5.
+**Last run:** Phase 4, against herdr 0.7.5.
 
 ---
 
@@ -97,6 +97,38 @@ readiness ceiling on a fresh tab — see behavior #2 on why that ceiling is now 
 
 Not directly diffable against Bash: both are fire-and-forget, so there is no output to
 compare beyond the `tab <label> — close it with: wq tidy` line, which matches.
+
+### `wq plan` — Phase 4
+
+One live run, `claude:opus:high` planning against `pi:openai-codex/gpt-5.6-sol:high`
+reviewing, cap of 2 rounds, in a throwaway scratch root:
+
+```
+==> round 1: drafting plan
+==> round 1: review
+==> round 2: revising plan
+==> round 2: review
+==> round limit (2) reached with findings outstanding
+```
+
+517s, exit 0 — matching Bash, which reserves a non-zero exit for `build`'s round limit,
+not `plan`'s.
+
+Artifacts confirmed:
+
+- `request.md` written for the agents to read, never pasted into a prompt
+- `plan.md` (325 lines) with all seven required sections present
+- `review.md` with 3 BLOCKING and 4 NON-BLOCKING findings, ending in `VERDICT: CHANGES`,
+  correctly read as *not* approved
+
+The review was genuinely adversarial — among other things it flagged the planner for
+appending a rebuttal to the previous review instead of implementation content. That is the
+cross-model pairing doing what it exists to do, and it is not something a same-model
+reviewer reliably produces.
+
+Note the reviewer pane again never reported `interactive_ready` across two rounds, and both
+prompts landed regardless. Behavior #2's decision to treat readiness as advisory has now
+paid off on every phase that prompts.
 
 ---
 

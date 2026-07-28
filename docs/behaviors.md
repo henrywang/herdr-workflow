@@ -144,7 +144,7 @@ concurrency breaks again, in a way tests that run one workflow at a time will no
 
 ## 5. `done` is not a state that persists
 
-**Bash:** `wq:250-281` · **Test:** `(pending — Phase 4)`
+**Bash:** `wq:250-281` · **Test:** `tests/unit/test_loops.py`
 
 `done` is where a finished turn lands, but it does not stay there: **a pane that has been
 read settles back to `idle`.** Wait on `done` alone and you hang for the full turn timeout
@@ -223,7 +223,7 @@ label-based search for the slug.
 
 ## 9. Terminal state is a heuristic. A file on disk is not.
 
-**Bash:** `wq:299-304` · **Test:** `(pending — Phase 4)`
+**Bash:** `wq:299-304` · **Test:** `tests/unit/test_loops.py`
 
 Every behavior above is an inference about what a TUI is doing from the outside. Each one
 is right most of the time.
