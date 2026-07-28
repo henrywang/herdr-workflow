@@ -102,6 +102,7 @@ uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 Integration tests need a running daemon: `uv run pytest -m integration`.
 
 - [docs/protocol-framing.md](docs/protocol-framing.md) — the socket API, established
+- [docs/parity.md](docs/parity.md) — how Bash/Python parity is checked, and what has been
 - [docs/behaviors.md](docs/behaviors.md) — the failure-mode catalogue
 - [PLAN.md](PLAN.md) — architecture and migration order
 
