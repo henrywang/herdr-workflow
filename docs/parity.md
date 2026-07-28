@@ -7,7 +7,7 @@ their output. This file records how parity is checked and what has been checked 
 Parity cannot be a unit test: it needs the Bash script, a real herdr daemon, and real
 state. So it is a procedure, run at the end of each phase.
 
-**Last run:** Phase 6, against herdr 0.7.5.
+**Last run:** Phase 7, against herdr 0.7.5.
 
 ---
 
@@ -205,6 +205,52 @@ wq: worktree /private/tmp/wq-p6/demo-worktrees/calc is gone
 `wq clean calc` then closed both the build workspace and the recorded parent, leaving the
 session exactly as it started. `interactive_ready` absent again, on the reviewer pane.
 
+### `wq brainstorm`, `wq ship`, `wq go` — Phase 7
+
+**`brainstorm`** returned in **6.7s** — the property that matters, since it uses `deliver`
+rather than `ask` and hands you the pane instead of waiting for the turn. The note was
+created with its frontmatter; 90 seconds later the agent had grown it to 94 lines with the
+frontmatter intact. With no `WQ_VAULT` set it refuses and names both ways to set one.
+
+**`ship` → `go` ran end to end** against a repository whose only remote was a local bare
+clone, so nothing could reach GitHub:
+
+```
+==> shipping demo-slug in tab ship-demo-slug — push, PR, CI and merge run there
+```
+
+and in the tab:
+
+```
+❯ WQ_ROOT=/tmp/wq-p7-root /…/.venv/bin/wq go demo-slug
+==> pushing wq/demo-slug
+==> opening pull request
+wq: could not open a pull request for wq/demo-slug
+    why: none of the git remotes configured … point to a known GitHub host
+    fix: open it by hand: cd /tmp/wq-p7/demo-worktrees/demo-slug && gh pr create --base main --fill
+```
+
+The push was real — `wq/demo-slug` appeared on the origin. Note the `~` prompt: the ship
+tab is a fresh login shell, which is exactly why `WQ_ROOT` is typed into the command rather
+than assumed (see the deviation below).
+
+**The agent-pane guard, both directions.** Run with `HERDR_PANE_ID` set to the brainstorm
+pane — a real agent pane — `go` refused:
+
+```
+wq: wq go cannot run in an agent pane
+    fix: run: wq ship demo-slug
+```
+
+Run with `HERDR_PANE_ID` set to the ship tab's pane, which has no agent, it passed straight
+through to the PR step. That is the sanctioned path working and the backstop working.
+
+**Not live-validated: the push-to-merge path itself.** Everything from `gh pr create`
+through merge and cleanup is covered by unit tests against a fake `gh` on PATH, including
+behavior #7, behavior #13, and seven separate injections proving no cleanup failure can
+undo a merge. Actually exercising it needs a real GitHub repository and a real merge under
+the user's account, which is theirs to authorise.
+
 ---
 
 ## Known deviations
@@ -252,11 +298,29 @@ finished by Bash would have its diff regenerated against `origin/main`. Bash nev
 supported those repositories at all, so this trades a command that could not work for one
 that works unless you switch implementations mid-build.
 
+### `wq ship` types `WQ_ROOT` into the command — intentional
+
+Bash typed a bare `wq go <slug>`. The ship tab is a **fresh login shell**, so nothing from
+the invoking process's environment reaches it: a `WQ_ROOT` set inline or by a wrapper is
+silently lost, and `go` then looks for a build that, from where it is standing, does not
+exist. Python types `WQ_ROOT=<resolved root> <wq> go <slug>`, every part `shlex.quote`d.
+
+Confirmed live — the ship tab's prompt is `~`, a fresh shell that inherited nothing.
+
+### `pane run`'s stdout sniffing is gone — a simplification the socket buys
+
+Bash had to read `herdr pane run`'s output looking for `"error"`, because it reported
+failures on stdout while still exiting 0. Over the socket an error is an error response and
+becomes an `ApiError`. One `pane.send_input` carries the text and the Enter together —
+verified live before `ship` was written.
+
 ---
 
 ## Not yet checked
 
-Commands not yet ported: `brainstorm`, `ship`, `go`. Each gets a parity run as it lands.
+**All 13 commands are ported.** What remains unchecked is the one path that cannot be
+checked without a real merge: `gh pr create` through merge and cleanup, covered by unit
+tests against a fake `gh` and waiting on a live run the user authorises.
 
 `wq --help` will differ — Bash generates it by `sed`-ing its own header comment block,
 Typer generates its own. See PLAN.md; the open question is whether the router depends on

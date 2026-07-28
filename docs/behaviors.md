@@ -193,7 +193,7 @@ when validating.
 
 ## 7. `gh pr merge --delete-branch` fails *after* the merge lands
 
-**Bash:** `wq:775-782` · **Test:** `(pending — Phase 7)`
+**Bash:** `wq:775-782` · **Test:** `test_shipping.py::test_merge_never_passes_delete_branch`
 
 In a worktree checkout, `--delete-branch` makes `gh` clean up the local branch by first
 switching the current checkout to the default branch. But `main` is already checked out in
@@ -319,6 +319,30 @@ ignores unknown fields; a field you do not read can only ever cost you.
 **The general rule: model what you read, and nothing else.** Every extra required field in
 a wire struct is a decode failure waiting for a server that fills it in differently — and
 decode happens after the request, which is to say after the side effects.
+
+---
+
+## 13. "No checks reported" reads like a CI failure and means the opposite
+
+**Bash:** `wq:757-770` · **Test:** `test_shipping.py::test_no_checks_reported_is_waited_out_not_treated_as_failure`
+
+GitHub registers a pull request's check runs a few seconds *after* the PR opens. In that
+window `gh pr checks --watch` does not wait — it **exits immediately** with `no checks
+reported`.
+
+Two ways to get this wrong, and they fail in opposite directions:
+
+- treat the non-zero exit as a CI failure → every fast `wq go` reports a failure that never
+  happened
+- treat `--watch` returning as "CI passed" → **merge a PR whose tests have not started**
+
+**Handling:** poll plain `gh pr checks` until the output stops saying `no checks reported`,
+*then* hand over to `--watch`. A repository with no CI at all never leaves that loop, so it
+is bounded by `WQ_CI_APPEAR_TIMEOUT` and the timeout message says how to merge by hand.
+
+This one generalises past GitHub: **"not started" and "finished with nothing" are the same
+string in most status APIs.** Anything that waits on external CI needs to distinguish them
+by time, not by a single reading — the same shape as rule of thumb #9.
 
 ---
 

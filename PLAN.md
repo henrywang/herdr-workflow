@@ -450,8 +450,9 @@ Treat the Bash implementation as the specification. Do not translate line-by-lin
 4. **Pick the validation library**; generate `models.py` from `herdr api schema --json`.
 5. **Audit CLI conveniences with no socket method** (starting with `pane run`).
 
-**Status:** Phases 0–6 are done and live-validated. `list`, `doctor`, `up`, `chat`, `ask`,
-`tidy`, `plan`, `build`, `revise`, `clean` — 10 of 13. Remaining: `brainstorm`, `ship`, `go`.
+**Status:** Phases 0–7 are done. **All 13 commands are ported**, and every one has been
+driven live except the push-to-merge half of `go`, which needs a real GitHub repository
+and the user's authorisation — see docs/parity.md.
 
 ### Phase 1 — read-only
 `list`, `doctor`
