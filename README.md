@@ -42,6 +42,41 @@ You also need [herdr](https://herdr.dev) running, `git`, and at least two agent 
 `claude` and `pi` are what the defaults assume. `gh` is needed only by `wq ship` / `wq go`.
 `wq doctor` checks all of it and explains anything missing.
 
+## Workflow
+
+The same slug carries the plan, build, and review artifacts through the whole workflow.
+Both agent loops are bounded; when a cap is reached, you decide whether to continue.
+
+```mermaid
+flowchart TD
+    request["wq plan &lt;slug&gt; &lt;request&gt;"] --> draft[Planner drafts plan.md]
+    draft --> planReview[Different model reviews the plan]
+    planReview -->|Changes and rounds remain| planFix[Planner revises]
+    planFix --> planReview
+    planReview -->|Approved or round cap| inspect[You inspect plan.md]
+
+    inspect -->|Proceed| build["wq build &lt;slug&gt; &lt;repo&gt;"]
+    inspect -->|Do not proceed| stop[Stop or plan again]
+    build --> implement[Code agent implements in a worktree]
+    implement --> codeReview[Different model reviews the diff]
+    codeReview -->|Changes and rounds remain| codeFix[Code agent fixes and commits]
+    codeFix --> codeReview
+    codeReview -->|Approved| ready[Build ready]
+    codeReview -->|Round cap; exit 2| revise["wq revise &lt;slug&gt; &lt;comment&gt;"]
+    ready -->|Request another change| revise
+    revise --> oneRound[One code turn and one review turn]
+    oneRound --> ready
+
+    ready -->|Accept| ship["wq ship &lt;slug&gt;"]
+    ship --> go[wq go in a plain shell tab]
+    go --> pr[Push branch and open PR]
+    pr --> ci{CI passes?}
+    ci -->|No| repair[Fix the build, then run wq go again]
+    repair --> go
+    ci -->|Yes| merge[Squash-merge PR]
+    merge --> clean[Remove worktree, branches, and workspaces]
+```
+
 ## A worked example
 
 One feature, start to finish. Each command blocks until its agents are done, then tells you
