@@ -130,6 +130,45 @@ Note the reviewer pane again never reported `interactive_ready` across two round
 prompts landed regardless. Behavior #2's decision to treat readiness as advisory has now
 paid off on every phase that prompts.
 
+### `wq build` — Phase 5
+
+One live run against a throwaway repository in `/tmp`, `claude:sonnet:high` coding against
+`pi:openai-codex/gpt-5.6-sol:high` reviewing, cap of 1 round:
+
+```
+==> creating worktree wq/hello
+branching from origin/main
+herdr also opened w2D for the parent checkout
+==> implementing
+==> round 1: code review
+pane w2E:p2 never reported interactive_ready; prompting anyway
+==> code approved in round 1
+```
+
+exit 0. Artifacts confirmed:
+
+- `build.env`, five lines: repo, `wq/hello`, worktree path, `w2D`, `origin/main`
+- `diff.patch` — the real committed change, both files, generated from
+  `git diff origin/main...HEAD`
+- `code-review.md` ending `VERDICT: APPROVED`, and honest about it: the reviewer noted it
+  could not run `pytest` because pytest was not installed rather than claiming the tests
+  passed
+- one commit on `wq/hello`
+
+**Behavior #6 confirmed end to end.** `worktree.create` reported one workspace and opened
+two; the diff-and-predicate found the second; `build.env` recorded it; and `wq clean hello`
+closed it afterwards — `closed workspace w2D (parent repo)`. The session went back to
+exactly the workspaces it started with.
+
+**The first attempt failed**, and it is worth recording why: a decode error on a field wq
+never reads, *after* `worktree.create` had already created the worktree and both
+workspaces. See behavior #12. The fake had been sending a shape the real server does not
+send, so the unit tests agreed with the mistake — behavior #11, again, in a new costume.
+The fake now sends the real payload.
+
+`interactive_ready` was absent again, on the reviewer pane, and the prompt landed anyway.
+That is four phases running.
+
 ---
 
 ## Known deviations
@@ -146,12 +185,36 @@ the escapes.
 If byte-identical captured output is ever needed, `output/console.py` is the one place to
 change.
 
+### The base ref is resolved, not hard-coded — intentional
+
+Bash means `origin/main` in two places: the `--base` it cuts the branch from
+(`wq:540`) and the diff range it reviews (`wq:567`, `wq:657`, and `ship`). That is wrong
+for every repository that never renamed its default branch, and it is exactly the kind of
+personal assumption a shared tool must not ship with.
+
+Python asks the repository — `refs/remotes/origin/HEAD`, then `origin/main`, then
+`origin/master` — and records the answer on **line five of `build.env`**, so the branch
+point and every later diff agree on one commit.
+
+**Parity holds where Bash worked.** `origin/main` is tried before `origin/master`, so any
+repository Bash could build in resolves to the same ref.
+
+**The cutover is safe in both directions.** Bash's reader takes the first four lines and
+ignores the rest, so it reads a Python-written file without noticing line five. A
+Bash-written file has no line five, and Python reads its absence as `origin/main` —
+which is what Bash meant.
+
+The one divergence that remains: a build started by Python in a `master` repository and
+finished by Bash would have its diff regenerated against `origin/main`. Bash never
+supported those repositories at all, so this trades a command that could not work for one
+that works unless you switch implementations mid-build.
+
 ---
 
 ## Not yet checked
 
-Commands not yet ported: `brainstorm`, `plan`, `build`, `revise`, `ship`, `go`. Each gets
-a parity run as it lands.
+Commands not yet ported: `brainstorm`, `revise`, `ship`, `go`. Each gets a parity run as
+it lands.
 
 `wq --help` will differ — Bash generates it by `sed`-ing its own header comment block,
 Typer generates its own. See PLAN.md; the open question is whether the router depends on

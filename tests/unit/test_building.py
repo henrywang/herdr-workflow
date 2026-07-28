@@ -61,12 +61,33 @@ def _workspace(ws_id: str, label: str, worktree: dict[str, Any] | None = None) -
 
 
 def _worktree_info(repo: Path, checkout: Path, *, linked: bool) -> dict[str, Any]:
+    """The worktree hanging off a *workspace*."""
     return {
         "repo_key": "k",
         "repo_name": repo.name,
         "repo_root": str(repo),
         "checkout_path": str(checkout),
         "is_linked_worktree": linked,
+    }
+
+
+def _created_worktree(checkout: Path, label: str) -> dict[str, Any]:
+    """The worktree `worktree.create` reports -- a different struct with the same name.
+
+    Copied from a real herdr 0.7.5 response. It shares only `is_linked_worktree` with the
+    workspace's version, and getting the two confused is what broke the first live run of
+    this command (behavior #12). The fake sends the real shape so the tests can disagree
+    with wq rather than agreeing with its mistakes.
+    """
+    return {
+        "path": str(checkout),
+        "label": label,
+        "branch": f"wq/{label}",
+        "is_bare": False,
+        "is_detached": False,
+        "is_prunable": False,
+        "is_linked_worktree": True,
+        "open_workspace_id": WS,
     }
 
 
@@ -171,7 +192,7 @@ class Scenario:
                 "pane_count": 1,
                 "agent_status": "unknown",
             },
-            "worktree": _worktree_info(self.repo, path, linked=True),
+            "worktree": _created_worktree(path, params["label"]),
         }
 
     # -- agents ------------------------------------------------------------

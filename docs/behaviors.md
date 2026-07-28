@@ -161,7 +161,7 @@ can flash idle between steps of a single turn.
 
 ## 6. Creating one worktree can open two workspaces
 
-**Bash:** `wq:531-553` · **Test:** `(pending — Phase 5)`
+**Bash:** `wq:531-553` · **Test:** `test_building.py::test_the_parent_workspace_is_found_and_recorded`
 
 `worktree.create` opens **two** workspaces when the repo has no workspace open yet:
 
@@ -178,6 +178,16 @@ close, a workspace belonging to a concurrent command.
 
 When the repo already had a workspace open, the diff is empty — and that workspace is the
 user's, not `wq`'s to touch.
+
+**Confirmed live, 2026-07-28.** A build in `/tmp/wq-p5/demo` opened `w2B` (label `demo`,
+`is_linked_worktree: false`) alongside the `hello` worktree workspace it reported. `wq
+clean hello` later closed it from `build.env`, which is the whole point of recording it.
+
+**Resolve both sides of the path comparison.** herdr reported `repo_root` as
+`/private/tmp/wq-p5/demo` where `git rev-parse --show-toplevel` said `/tmp/wq-p5/demo` —
+the same directory, spelled two ways, because `/tmp` is a symlink on macOS. An unresolved
+comparison matches nothing, silently, and only in the `/tmp` repositories you reach for
+when validating.
 
 ---
 
@@ -284,6 +294,34 @@ assuming the other is a five-minute bug that looks like a twenty-minute one.
 
 ---
 
+## 12. Two different structs in the schema share the name `WorktreeInfo`
+
+**Test:** `test_building.py::_created_worktree` (the fake sends the real shape)
+
+herdr's schema defines `WorktreeInfo` twice, in the same document:
+
+| Where | Fields |
+| --- | --- |
+| `WorkspaceWorktreeInfo`, hanging off a workspace | `repo_key`, `repo_name`, `repo_root`, `checkout_path`, `is_linked_worktree` |
+| `WorktreeInfo`, returned by `worktree.create` and `worktree.list` | `path`, `label`, `branch`, `is_bare`, `is_detached`, `is_prunable`, `is_linked_worktree`, `open_workspace_id` |
+
+They share one field. `wq build` modelled the second as the first, and the first live run
+died with `Object missing required field 'repo_key'`.
+
+**Where it hurt:** the decode failed *after* `worktree.create` had already succeeded. The
+git worktree existed, both workspaces were open, and `build.env` — the only record of the
+invisible one — had not been written yet. The failure leaked exactly what behavior #6
+exists to prevent.
+
+**Handling:** wq never reads that field, so it is no longer modelled at all. msgspec
+ignores unknown fields; a field you do not read can only ever cost you.
+
+**The general rule: model what you read, and nothing else.** Every extra required field in
+a wire struct is a decode failure waiting for a server that fills it in differently — and
+decode happens after the request, which is to say after the side effects.
+
+---
+
 ## Rules of thumb
 
 1. **Confirm effects, do not infer them.** Prompt delivery via `state_change_seq`; turn
@@ -301,3 +339,5 @@ assuming the other is a five-minute bug that looks like a twenty-minute one.
    `state_change_seq` is a receipt. Build on receipts.
 9. **"Not there yet" and "never coming" look identical in one sample.** Distinguish them by
    time, not by a single read.
+10. **Model only the fields you read.** Decoding happens after the request, so a struct
+    that is stricter than it needs to be fails you after the side effects have landed.

@@ -71,12 +71,18 @@ class Pong(msgspec.Struct):
     capabilities: dict[str, Any] | None = None
 
 
-class WorktreeInfo(msgspec.Struct):
+class WorkspaceWorktreeInfo(msgspec.Struct):
     """A workspace's git worktree, when it has one.
 
     `is_linked_worktree` distinguishes the worktree wq created from the parent checkout
     that `worktree create` opens alongside it -- see behavior #6, where telling them
     apart is the difference between cleaning up and leaking a workspace.
+
+    **Named for the schema, not for the concept.** herdr's schema has two different
+    structs both called `WorktreeInfo`: this one, hanging off a workspace, and another --
+    `path`, `label`, `is_bare`, `is_prunable` -- returned by `worktree.create` and
+    `worktree.list`. They share a name and share almost no fields. Modelling one as the
+    other decodes cleanly right up until a live server sends the other.
     """
 
     repo_key: str
@@ -95,7 +101,7 @@ class Workspace(msgspec.Struct):
     tab_count: int
     active_tab_id: str
     agent_status: str
-    worktree: WorktreeInfo | None = None
+    worktree: WorkspaceWorktreeInfo | None = None
     tokens: dict[str, str] = {}
 
 
@@ -204,17 +210,23 @@ class WorktreeCreated(msgspec.Struct):
     """Result of `worktree.create`.
 
     Its own result type, not `workspace_created`: the wire `type` differs and it carries an
-    extra required `worktree`. The rest of the shape matches, so `root_pane` is available
-    directly and the Bash implementation's snapshot lookup for the first pane is not needed.
+    extra `worktree`. The rest of the shape matches, so `root_pane` is available directly
+    and the Bash implementation's snapshot lookup for the first pane is not needed.
 
-    What it does **not** report is the second workspace. When the repository had no
+    **`worktree` is deliberately not modelled.** wq never reads it, msgspec ignores
+    unknown fields, and modelling a field you do not use can only ever fail -- which is
+    exactly what it did: the first live run decoded `worktree` against the *workspace's*
+    worktree struct, failed on a missing `repo_key`, and left behind the worktree and both
+    workspaces it had just created. A decode error after the irreversible work is the
+    worst place to have one. See behavior #12.
+
+    What this does **not** report is the second workspace. When the repository had no
     workspace open, herdr opens one for the parent checkout as well and mentions it
     nowhere -- behavior #6. Only diffing the workspace list around the call reveals it.
     """
 
     workspace: Workspace
     root_pane: Pane
-    worktree: WorktreeInfo | None = None
     tab: Tab | None = None
     type: str = "worktree_created"
 

@@ -450,6 +450,9 @@ Treat the Bash implementation as the specification. Do not translate line-by-lin
 4. **Pick the validation library**; generate `models.py` from `herdr api schema --json`.
 5. **Audit CLI conveniences with no socket method** (starting with `pane run`).
 
+**Status:** Phases 0–5 are done and live-validated. `list`, `doctor`, `up`, `chat`, `ask`,
+`tidy`, `plan`, `build`, `clean` — 9 of 13. Remaining: `revise`, `brainstorm`, `ship`, `go`.
+
 ### Phase 1 — read-only
 `list`, `doctor`
 
@@ -469,6 +472,13 @@ repo rather than the slug.
 
 ### Phase 5 — build
 `build` (worktree, two-workspace diff, code ↔ review loop)
+
+The base ref stops being hard-coded here. Bash meant `origin/main` in four places; Python
+resolves it once from the repository and records it on line five of `build.env`, which
+Bash's four-line reader ignores. See docs/parity.md.
+
+`build` exits **2** at its round cap — a router contract (`go.md:61`), and distinct from
+the `1` of a real failure.
 
 ### Phase 6 — revise
 `revise`
