@@ -59,6 +59,13 @@ class ApiError(HerdrError):
         super().__init__(detail, why=f"herdr returned error code '{code}'")
 
 
+class GitError(WqError):
+    """A git command failed, or the repository is not in a state wq can work with.
+
+    Carries git's own stderr as `why`. Nothing wq could synthesise beats it.
+    """
+
+
 class WorkflowError(WqError):
     """A workflow could not proceed."""
 

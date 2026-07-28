@@ -16,7 +16,9 @@ import pytest
 from typer.testing import CliRunner
 
 from herdr_workflow import cli
+from herdr_workflow.workflows import building, prompts
 from tests.fake_herdr import FakeHerdr
+from tests.unit.test_building import Scenario
 
 runner = CliRunner()
 
@@ -133,6 +135,71 @@ def test_doctor_flags_a_reviewer_that_wrote_the_code(
     payload = json.loads(result.stdout)
     names = {c["name"] for c in payload["checks"] if c["status"] == "warn"}
     assert "review independence" in names
+
+
+# -- build's exit codes ------------------------------------------------------
+# A router contract, not an implementation detail: the router prompt stops on any non-zero
+# exit, and `2` has to stay distinguishable from the `1` of a real failure.
+
+
+def _build_scenario(
+    fake: FakeHerdr, root: Path, repo: Path, reviews: list[str]
+) -> building.BuildPaths:
+    paths = building.BuildPaths.for_slug(root, "x")
+    paths.dir.mkdir(parents=True, exist_ok=True)
+    paths.plan.write_text("# Plan\n\nAdd a function.\n")
+    Scenario(fake, paths, repo, reviews=reviews)
+    return paths
+
+
+def test_build_exits_two_when_the_round_limit_is_reached(
+    wq_env: Path, threaded_fake: FakeHerdr, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unreviewed code is sitting on a branch. That is a different outcome from `wq plan`
+    stopping at its cap, which exits 0, and from wq breaking, which exits 1."""
+    monkeypatch.setenv("WQ_CODE_ROUNDS", "1")
+    paths = _build_scenario(threaded_fake, wq_env, repo, [prompts.VERDICT_CHANGES] * 5)
+
+    result = runner.invoke(cli.app, ["build", "x", str(repo)])
+    assert result.exit_code == 2
+    assert "round limit (1) reached" in result.output
+    # No `next: wq ship` -- pointing at ship for unreviewed code is the wrong advice.
+    assert "wq ship" not in result.output
+    assert paths.review.is_file()
+
+
+def test_build_exits_zero_and_points_at_ship_when_approved(
+    wq_env: Path, threaded_fake: FakeHerdr, repo: Path
+) -> None:
+    _build_scenario(threaded_fake, wq_env, repo, [prompts.VERDICT_APPROVED])
+
+    result = runner.invoke(cli.app, ["build", "x", str(repo)])
+    assert result.exit_code == 0
+    assert "wq ship x" in result.output
+
+
+def test_build_json_reports_the_outcome_with_the_exit_code(
+    wq_env: Path, threaded_fake: FakeHerdr, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The router reads this. It still gets the payload on a round-limit stop, so it can
+    say *what* stopped rather than only that something did."""
+    monkeypatch.setenv("WQ_CODE_ROUNDS", "1")
+    _build_scenario(threaded_fake, wq_env, repo, [prompts.VERDICT_CHANGES] * 5)
+
+    result = runner.invoke(cli.app, ["--json", "build", "x", str(repo)])
+    assert result.exit_code == 2
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["approved"] is False
+    assert payload["rounds"] == 1
+    assert payload["branch"] == "wq/x"
+    assert payload["base"] == "origin/main"
+
+
+def test_build_without_a_plan_exits_one(wq_env: Path, threaded_fake: FakeHerdr, repo: Path) -> None:
+    """A missing plan is wq refusing to start, not a loop that ran and did not converge."""
+    result = runner.invoke(cli.app, ["build", "nothing-here", str(repo)])
+    assert result.exit_code == 1
+    assert "no plan at" in result.output
 
 
 def test_bad_config_reports_cleanly(tmp_path: Path) -> None:

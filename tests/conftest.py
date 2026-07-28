@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import subprocess
 import tempfile
 import threading
 from collections.abc import AsyncIterator, Iterator
@@ -83,6 +84,40 @@ def threaded_fake(socket_dir: Path) -> Iterator[FakeHerdr]:
         loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=5)
         loop.close()
+
+
+def git_run(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+@pytest.fixture
+def origin(tmp_path: Path) -> Path:
+    """A bare repository with one commit on `main`, to act as a remote.
+
+    Real repositories rather than mocks: `build` shells out to git for the branch point and
+    the diff range, and those are exactly the behaviours worth testing for real.
+    """
+    work = tmp_path / "seed"
+    work.mkdir()
+    git_run(work, "init", "--initial-branch=main")
+    git_run(work, "config", "user.email", "t@example.com")
+    git_run(work, "config", "user.name", "Test")
+    (work / "README.md").write_text("seed\n")
+    git_run(work, "add", ".")
+    git_run(work, "commit", "-m", "initial")
+
+    bare = tmp_path / "origin.git"
+    git_run(tmp_path, "clone", "--bare", str(work), str(bare))
+    return bare
+
+
+@pytest.fixture
+def repo(tmp_path: Path, origin: Path) -> Path:
+    clone = tmp_path / "repo"
+    git_run(tmp_path, "clone", str(origin), str(clone))
+    git_run(clone, "config", "user.email", "t@example.com")
+    git_run(clone, "config", "user.name", "Test")
+    return clone.resolve()
 
 
 @pytest.fixture

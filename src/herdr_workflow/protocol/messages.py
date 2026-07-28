@@ -200,6 +200,25 @@ class WorkspaceCreated(msgspec.Struct):
     type: str = "workspace_created"
 
 
+class WorktreeCreated(msgspec.Struct):
+    """Result of `worktree.create`.
+
+    Its own result type, not `workspace_created`: the wire `type` differs and it carries an
+    extra required `worktree`. The rest of the shape matches, so `root_pane` is available
+    directly and the Bash implementation's snapshot lookup for the first pane is not needed.
+
+    What it does **not** report is the second workspace. When the repository had no
+    workspace open, herdr opens one for the parent checkout as well and mentions it
+    nowhere -- behavior #6. Only diffing the workspace list around the call reveals it.
+    """
+
+    workspace: Workspace
+    root_pane: Pane
+    worktree: WorktreeInfo | None = None
+    tab: Tab | None = None
+    type: str = "worktree_created"
+
+
 class TabCreated(msgspec.Struct):
     """Result of `tab.create`."""
 

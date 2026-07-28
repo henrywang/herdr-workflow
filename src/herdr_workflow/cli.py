@@ -26,7 +26,7 @@ from herdr_workflow.errors import WqError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
-from herdr_workflow.workflows import cleanup, inbox, listing, planning, tabs
+from herdr_workflow.workflows import building, cleanup, inbox, listing, planning, tabs
 from herdr_workflow.workflows import doctor as doctor_workflow
 
 app = typer.Typer(
@@ -337,6 +337,57 @@ def cmd_plan(
         console.log(f"plan:   {result.plan_file}")
         console.log(f"review: {result.review_file}")
         console.log(f"next:   wq build {result.slug} <repo>")
+
+    _guard(body)
+
+
+@app.command("build")
+def cmd_build(
+    slug: Annotated[str, typer.Argument(help="The slug whose plan to implement.")],
+    repo: Annotated[
+        Path | None, typer.Argument(help="Repository to build in. Defaults to the cwd.")
+    ] = None,
+) -> None:
+    """Create a worktree and run the code <-> review loop."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> building.BuildResult:
+            async with connect(path) as client:
+                return await building.build(client, cfg, slug, repo or Path.cwd())
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "workspace_id": result.workspace_id,
+                        "worktree": str(result.worktree),
+                        "branch": result.branch,
+                        "base": result.base,
+                        "diff": str(result.diff_file),
+                        "review": str(result.review_file),
+                        "rounds": result.rounds,
+                        "approved": result.approved,
+                    },
+                    indent=2,
+                )
+            )
+        elif result.approved:
+            # Only on approval. A build that stopped at its round cap has already said so,
+            # and pointing at `wq ship` for unreviewed code would be the wrong advice.
+            console.log(f"worktree: {result.worktree}")
+            console.log(f"diff:     {result.diff_file}")
+            console.log(f'next:     wq revise {result.slug} "..."  |  wq ship {result.slug}')
+
+        # Exit 2, not 1: the router's contract is to stop on any non-zero exit, and this
+        # one means "unreviewed code is sitting on a branch", not "wq broke". The loop has
+        # already printed the round-limit lines, so this adds no error block of its own.
+        if not result.approved:
+            raise typer.Exit(2)
 
     _guard(body)
 

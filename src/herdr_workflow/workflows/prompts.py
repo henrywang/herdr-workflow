@@ -74,3 +74,41 @@ def revise_plan(review_file: Path, plan_file: Path) -> str:
         f"update {plan_file} in place. If you disagree with a finding, say so in the Open "
         "Questions section rather than silently ignoring it."
     )
+
+
+def implement(plan_file: Path, worktree: Path, branch: str) -> str:
+    """The build's opening turn.
+
+    "Commit your work" is load-bearing rather than tidiness: the review reads
+    `git diff <base>...HEAD`, so uncommitted edits are invisible to it. "Do not push and do
+    not open a pull request" is equally deliberate -- `wq ship` owns that, and an agent that
+    opens its own PR mid-review puts unreviewed work in front of people.
+    """
+    return (
+        f"Implement the approved plan at {plan_file} in this worktree ({worktree}, branch "
+        f"{branch}). Follow the repository's own conventions and instruction files. Run the "
+        "tests. Commit your work with a clear message. Do not push and do not open a pull "
+        "request."
+    )
+
+
+def review_code(diff_file: Path, plan_file: Path, review_file: Path) -> str:
+    """Review the diff, not the repository.
+
+    A reviewer told to read the tree re-reads it every round, which triples the cost of a
+    build for no extra signal. The escape hatch is explicit so a change that genuinely
+    cannot be judged from the diff still gets judged properly.
+    """
+    return (
+        f"Review the diff at {diff_file} against the plan at {plan_file}. Read files from "
+        "the worktree only when the diff alone is not enough to judge a change. Write your "
+        f"review to {review_file}. {REVIEW_PROTOCOL}"
+    )
+
+
+def fix_findings(review_file: Path) -> str:
+    return (
+        f"The reviewer raised findings in {review_file}. Fix every BLOCKING finding, re-run "
+        "the tests, and commit. If you disagree with a finding, reply explaining why rather "
+        "than silently ignoring it."
+    )

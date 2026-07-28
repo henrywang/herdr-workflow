@@ -16,6 +16,7 @@ from herdr_workflow.errors import ApiError
 from herdr_workflow.herdr import ops
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.output import console
+from herdr_workflow.workflows import build_env
 
 
 def _empty() -> list[str]:
@@ -27,26 +28,6 @@ class CleanResult:
     closed_workspaces: list[str] = field(default_factory=_empty)
     closed_tabs: list[str] = field(default_factory=_empty)
     removed_dir: Path | None = None
-
-
-def build_env_path(root: Path, slug: str) -> Path:
-    return root / slug / "build.env"
-
-
-def read_build_env(path: Path) -> tuple[str, str, str, str | None]:
-    """Parse build.env: repo, branch, worktree path, parent workspace id.
-
-    **The format is frozen for v0.1.** Bash and Python run side by side during the
-    cutover, and an in-flight build written by one must be readable by the other.
-
-    The fourth line is optional -- files written before wq recorded the parent workspace
-    have only three, and the Bash reader tolerates that.
-    """
-    lines = path.read_text().splitlines()
-    while len(lines) < 3:
-        lines.append("")
-    parent = lines[3].strip() if len(lines) > 3 and lines[3].strip() else None
-    return lines[0].strip(), lines[1].strip(), lines[2].strip(), parent
 
 
 async def close_parent_ws(client: HerdrClient, workspace_id: str | None) -> bool:
@@ -125,9 +106,9 @@ async def clean(client: HerdrClient, slug: str, root: Path) -> CleanResult:
 
     # The parent-repo workspace is labelled with the repo, not the slug, so the loop
     # cannot see it either -- its id is in build.env.
-    env_path = build_env_path(root, slug)
+    env_path = build_env.path_for(root, slug)
     if env_path.is_file():
-        _repo, _branch, _wt, parent = read_build_env(env_path)
+        parent = build_env.read(env_path).parent_workspace
         if await close_parent_ws(client, parent):
             result.closed_workspaces.append(f"{parent} (parent repo)")
 

@@ -25,6 +25,7 @@ from herdr_workflow.protocol.messages import (
     TabCreated,
     Workspace,
     WorkspaceCreated,
+    WorktreeCreated,
 )
 
 # -- lookups over a snapshot -------------------------------------------------
@@ -93,6 +94,29 @@ async def workspace_close(client: HerdrClient, workspace_id: str) -> None:
 
 async def workspace_focus(client: HerdrClient, workspace_id: str) -> None:
     await client.request("workspace.focus", {"workspace_id": workspace_id})
+
+
+async def worktree_create(
+    client: HerdrClient,
+    *,
+    repo: Path,
+    branch: str,
+    base: str,
+    path: Path,
+    label: str,
+) -> WorktreeCreated:
+    return await client.call(
+        "worktree.create",
+        WorktreeCreated,
+        {
+            "cwd": str(repo),
+            "branch": branch,
+            "base": base,
+            "path": str(path),
+            "label": label,
+            "focus": False,
+        },
+    )
 
 
 async def workspace_ids(client: HerdrClient) -> set[str]:

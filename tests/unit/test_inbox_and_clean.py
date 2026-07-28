@@ -9,7 +9,7 @@ import pytest
 
 from herdr_workflow.config import Config
 from herdr_workflow.herdr.client import HerdrClient
-from herdr_workflow.workflows import cleanup, inbox
+from herdr_workflow.workflows import build_env, cleanup, inbox
 from tests.fake_herdr import FakeHerdr
 
 
@@ -181,20 +181,64 @@ async def test_up_honours_a_custom_inbox_label(
 
 
 # -- build.env ---------------------------------------------------------------
+# The first four lines are frozen for v0.1: Bash and Python run side by side during the
+# cutover, so a build started by one has to be finishable by the other.
 
 
-def test_build_env_reads_four_lines(tmp_path: Path) -> None:
+def test_build_env_reads_the_bash_four_line_form(tmp_path: Path) -> None:
     path = tmp_path / "build.env"
     path.write_text("/repo\nwq/slug\n/wt\nw7\n")
-    assert cleanup.read_build_env(path) == ("/repo", "wq/slug", "/wt", "w7")
+    env = build_env.read(path)
+    assert (env.repo, env.branch, env.worktree, env.parent_workspace) == (
+        "/repo",
+        "wq/slug",
+        "/wt",
+        "w7",
+    )
+
+
+def test_a_bash_written_file_means_origin_main(tmp_path: Path) -> None:
+    """Bash had no base line because it always meant `origin/main`. A missing line is that
+    answer, not an unknown one -- anything else would diff a Bash-started build against a
+    commit its branch was never cut from."""
+    path = tmp_path / "build.env"
+    path.write_text("/repo\nwq/slug\n/wt\nw7\n")
+    assert build_env.read(path).base == "origin/main"
 
 
 def test_build_env_tolerates_the_legacy_three_line_form(tmp_path: Path) -> None:
     """Files written before wq recorded the parent workspace have three lines, and the
-    Bash reader tolerates that. The format is frozen for v0.1 so both can read it."""
+    Bash reader tolerates that."""
     path = tmp_path / "build.env"
     path.write_text("/repo\nwq/slug\n/wt\n")
-    assert cleanup.read_build_env(path) == ("/repo", "wq/slug", "/wt", None)
+    env = build_env.read(path)
+    assert env.parent_workspace is None
+    assert env.worktree == "/wt"
+
+
+def test_the_base_ref_survives_a_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "build.env"
+    written = build_env.BuildEnv("/repo", "wq/slug", "/wt", "w7", "origin/develop")
+    build_env.write(path, written)
+    assert build_env.read(path) == written
+
+
+def test_a_missing_parent_keeps_the_base_on_line_five(tmp_path: Path) -> None:
+    """A positional format cannot afford an optional line in the middle of it, so an
+    absent parent workspace is written as an empty line rather than skipped."""
+    path = tmp_path / "build.env"
+    build_env.write(path, build_env.BuildEnv("/repo", "wq/slug", "/wt", None, "origin/master"))
+    assert path.read_text().splitlines() == ["/repo", "wq/slug", "/wt", "", "origin/master"]
+    assert build_env.read(path).base == "origin/master"
+
+
+def test_bash_can_still_read_a_python_written_file(tmp_path: Path) -> None:
+    """Bash reads exactly four lines and ignores the rest, which is what makes a fifth
+    line safe to add mid-cutover."""
+    path = tmp_path / "build.env"
+    build_env.write(path, build_env.BuildEnv("/repo", "wq/slug", "/wt", "w7", "origin/develop"))
+    first_four = path.read_text().splitlines()[:4]
+    assert first_four == ["/repo", "wq/slug", "/wt", "w7"]
 
 
 # -- close_parent_ws (behavior #8) -------------------------------------------
