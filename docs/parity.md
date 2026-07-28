@@ -7,7 +7,7 @@ their output. This file records how parity is checked and what has been checked 
 Parity cannot be a unit test: it needs the Bash script, a real herdr daemon, and real
 state. So it is a procedure, run at the end of each phase.
 
-**Last run:** Phase 2, against herdr 0.7.5.
+**Last run:** Phase 3, against herdr 0.7.5.
 
 ---
 
@@ -98,10 +98,24 @@ change.
 
 ---
 
+### `wq chat`, `wq ask`, `wq tidy` — Phase 3
+
+Run live against a throwaway inbox (`WQ_INBOX_LABEL=wq-p3`), with a real `pi` agent:
+
+- `chat` created the tab, delivered the prompt, and the agent answered `CHAT-OK`
+- a second `chat` reused the same tab (`created_tab: false`) — no second agent
+- `ask` created a timestamped `ask-033837` tab scoped to the cwd
+- `tidy` closed the finished ask tab and left `router` and `chat` untouched
+
+Not directly diffable against Bash: both are fire-and-forget, so there is no output to
+compare beyond the `tab <label> — close it with: wq tidy` line, which matches.
+
+---
+
 ## Not yet checked
 
-Commands not yet ported: `chat`, `ask`, `tidy`, `brainstorm`, `plan`, `build`, `revise`,
-`ship`, `go`. Each gets a parity run as it lands.
+Commands not yet ported: `brainstorm`, `plan`, `build`, `revise`, `ship`, `go`. Each gets
+a parity run as it lands.
 
 `wq --help` will differ — Bash generates it by `sed`-ing its own header comment block,
 Typer generates its own. See PLAN.md; the open question is whether the router depends on

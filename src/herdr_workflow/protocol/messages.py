@@ -220,3 +220,29 @@ class AgentListResult(msgspec.Struct):
 
     agents: list[Agent] = []
     type: str = "agent_list"
+
+
+class AgentResult(msgspec.Struct):
+    """Result of `agent.get`, `agent.prompt` and `agent.wait`.
+
+    **The `agent` returned by `agent.prompt` carries the state from *before* the prompt.**
+    Verified live: seq was 4 before, `agent.prompt` returned 4, and only a subsequent poll
+    saw 5. So this response cannot be used as the delivery receipt -- see behavior #2.
+    """
+
+    agent: Agent
+    type: str = "agent_info"
+
+
+class ReadPayload(msgspec.Struct):
+    pane_id: str
+    text: str
+    source: str = "visible"
+    format: str = "text"
+
+
+class AgentReadResult(msgspec.Struct):
+    """Result of `agent.read`: {"type": "agent_read", "read": {..., "text": ...}}."""
+
+    read: ReadPayload
+    type: str = "agent_read"

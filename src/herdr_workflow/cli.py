@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -25,7 +26,7 @@ from herdr_workflow.errors import WqError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
-from herdr_workflow.workflows import cleanup, inbox, listing
+from herdr_workflow.workflows import cleanup, inbox, listing, tabs
 from herdr_workflow.workflows import doctor as doctor_workflow
 
 app = typer.Typer(
@@ -215,6 +216,91 @@ def cmd_up() -> None:
         console.log("router started" if result.started_router else "router already running")
 
     _guard(body)
+
+
+@app.command("chat")
+def cmd_chat(
+    message: Annotated[list[str], typer.Argument(help="The message to send.")],
+) -> None:
+    """Send a message to the reusable inbox chat tab."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> tabs.TabResult:
+            async with connect(path) as client:
+                return await tabs.chat(client, cfg, " ".join(message), Path.home())
+
+        result = _run(go())
+        _emit_tab(result)
+
+    _guard(body)
+
+
+@app.command("ask")
+def cmd_ask(
+    question: Annotated[list[str], typer.Argument(help="The question to ask.")],
+) -> None:
+    """Ask a question in a fresh inbox tab, scoped to the current directory."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+        # WQ_ASK_CWD is documented usage in the router prompt:
+        # `WQ_ASK_CWD=<dir> wq ask "..."`.
+        cwd = Path(os.environ.get("WQ_ASK_CWD", "")).expanduser() or Path.cwd()
+
+        async def go() -> tabs.TabResult:
+            async with connect(path) as client:
+                return await tabs.ask(client, cfg, " ".join(question), cwd)
+
+        result = _run(go())
+        _emit_tab(result)
+        if not _ctx.json:
+            console.log(f"tab {result.tab_label} — close it with: wq tidy")
+
+    _guard(body)
+
+
+@app.command("tidy")
+def cmd_tidy() -> None:
+    """Close finished ask tabs."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> tabs.TidyResult:
+            async with connect(path) as client:
+                return await tabs.tidy(client, cfg)
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps({"closed": result.closed, "kept_working": result.kept_working}, indent=2)
+            )
+            return
+        console.log(f"closed {len(result.closed)} ask tab(s)")
+        for label in result.kept_working:
+            console.detail(f"  kept {label} — still working")
+
+    _guard(body)
+
+
+def _emit_tab(result: tabs.TabResult) -> None:
+    if _ctx.json:
+        print(
+            json.dumps(
+                {
+                    "workspace_id": result.workspace_id,
+                    "tab_label": result.tab_label,
+                    "pane_id": result.pane_id,
+                    "created_tab": result.created_tab,
+                },
+                indent=2,
+            )
+        )
 
 
 @app.command("clean")

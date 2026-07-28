@@ -20,7 +20,7 @@ not landed yet.
 
 ## 1. A pane can report "ready" while it will silently eat your prompt
 
-**Bash:** `wq:173-197` · **Test:** `(pending — Phase 4)`
+**Bash:** `wq:173-197` · **Test:** `tests/unit/test_delivery.py`
 
 Claude Code asks *"Is this a project you created or one you trust?"* the first time it
 runs in a directory — which is every pane `wq` starts, since the scratch dir and the build
@@ -48,7 +48,7 @@ is a *screen* state. No event fires.
 
 ## 2. `agent.prompt` returning OK does not mean the agent took the text
 
-**Bash:** `wq:199-244` · **Test:** `(pending — Phase 4)`
+**Bash:** `wq:199-244` · **Test:** `tests/unit/test_delivery.py`
 
 `agent.prompt` reports whether **herdr** accepted the request — not whether the **TUI**
 accepted the text. A TUI mid-startup, or sitting on a dialog, drops it without a trace.
@@ -70,29 +70,49 @@ in `done` from its previous turn, so seeing `done` proves nothing.
 not solve this. It waits on agent state, and the failure here is that the agent never
 enters a state at all.
 
-### `interactive_ready` is frequently absent — do not build readiness on it
+### `interactive_ready` cannot gate delivery
 
-**[verified, herdr 0.7.5]** The field is **optional in the schema** and herdr **omits it
-entirely** from both `agent.list` and `agent.get` for a freshly started `pi` agent. Not
-`false` — missing.
+**[verified, herdr 0.7.5]** The field is **optional in the schema**, and its behaviour is
+inconsistent between panes that are both perfectly healthy:
 
-So a readiness poll that waits for `interactive_ready == true` can wait forever. The Bash
-implementation's `agent_ready()` does exactly that, with a 60-second cap; it presumably
-survives because the field does appear for some agent kinds or some states, but we have
-not yet seen it appear at all.
+| Pane | `interactive_ready` |
+|------|--------------------|
+| A `pi` agent in a workspace root pane | absent for ~2s, then `True` |
+| A `pi` agent in a `wq chat` tab's root pane | **never set at all** |
 
-Our model types it `bool | None`, because *absent* and *false* are different claims and
-collapsing them loses the distinction that matters.
+In the second case the prompt was still delivered and answered correctly — `CHAT-OK` came
+back — with `state_change_seq` moving exactly as expected. So a pane can be entirely
+ready while herdr never says so.
 
-**Open for Phase 4:** find out when, if ever, herdr sets it — by agent kind, and by how
-far into startup. Until then, readiness has to rest on `state_change_seq` (this behavior)
-and on reading the screen (behavior #1), not on this flag.
+**This makes it a warm-up hint, not a gate.** The Bash implementation's `agent_ready()`
+treats it as a hard requirement and dies after 60 seconds with *"agent in pane X never
+became ready for input"*. On the pane above, that path would have failed a working
+`wq chat`.
+
+`wait_ready` therefore returns a boolean instead of raising, logs when readiness was never
+observed, and prompts anyway. The delivery confirmation below is the real guard: it catches
+everything readiness would have caught, plus the cases readiness cannot see.
+
+Our model types it `bool | None`, because *absent* and *false* are different claims.
+
+### `agent.start` returning ok does not mean `agent.get` knows about the agent
+
+**[verified]** Registration is asynchronous. For roughly the first second, `agent.get` on
+a pane whose agent has just started answers as though the pane has no agent at all.
+
+Treating the first `unknown` as fatal made `wq chat` fail instantly on a tab it had just
+created — *"no agent in pane w28:p2"*. Found by running against a real daemon; the fake
+never reproduced it because the fake answers immediately.
+
+`unknown` means either "registration has not caught up" or "the agent is gone", and a
+single sample cannot tell them apart. So they are distinguished **by time**: only fail once
+a grace window has passed with no agent ever seen.
 
 ---
 
 ## 3. A freshly created pane is not at a shell prompt yet
 
-**Bash:** `wq:103-129` · **Test:** `(pending — Phase 2)`
+**Bash:** `wq:103-129` · **Test:** `tests/unit/test_agents.py`
 
 `pane.split` returns as soon as the pane exists. Starting an agent in it immediately fails
 with `agent_pane_busy`. The gap is short but real.
@@ -105,7 +125,7 @@ model name into a fifteen-second hang followed by a confusing message.
 
 ## 4. Agent names are global, so concurrent workspaces collide
 
-**Bash:** `wq:105-111` · **Test:** `(pending — Phase 2)`
+**Bash:** `wq:105-111` · **Test:** `tests/unit/test_agents.py`
 
 herdr's agent names are global, not scoped to a workspace. A second concurrent `wq`
 command starting its own `idea` or `review` pane fails with `agent_name_taken`.
@@ -181,7 +201,7 @@ the function.** Cleanup after a landed merge is best-effort by definition.
 
 ## 8. Only close a workspace that is still what you left behind
 
-**Bash:** `wq:76-94` · **Test:** `(pending — Phase 2)`
+**Bash:** `wq:76-94` · **Test:** `tests/unit/test_inbox_and_clean.py`
 
 The parent workspace from behavior #6 must be cleaned up — but by the time cleanup runs, a
 human may have adopted it.
@@ -275,3 +295,7 @@ assuming the other is a five-minute bug that looks like a twenty-minute one.
    because two commands overlapped.
 7. **Verify against the real thing before believing your own test suite.** A fake built
    from your reading of the docs cannot disprove your reading of the docs.
+8. **A signal that is sometimes absent cannot be a gate.** `interactive_ready` is a hint;
+   `state_change_seq` is a receipt. Build on receipts.
+9. **"Not there yet" and "never coming" look identical in one sample.** Distinguish them by
+   time, not by a single read.
