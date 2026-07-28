@@ -27,20 +27,49 @@ uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 ## How it fits together
 
 ```
-cli.py            Typer commands. One asyncio.run at the edge, nowhere else.
-config.py         defaults -> user config -> project config -> WQ_* env
-workflows/        what each command does. No sockets in here.
-herdr/            the socket client, and the reliability layer above it
-  client.py       one request per connection -- see docs/protocol-framing.md
-  delivery.py     getting a prompt into a TUI and knowing it landed
-  ops.py          typed wrappers over the herdr methods wq uses
-git/              subprocess wrappers; gh.py is the pull-request half
-protocol/         wire types (msgspec)
-output/           console formatting -- the router reads this, so it is a contract
+src/herdr_workflow/
+  __main__.py          `python -m herdr_workflow` entry point
+  cli.py               Typer commands, output selection, and process exit codes
+  config.py            defaults -> user config -> project config -> WQ_* environment
+  errors.py            user-facing errors with causes and remedies
+
+  git/
+    __init__.py        local Git operations: repositories, bases, diffs, pushes, branches
+    gh.py              GitHub CLI operations: pull requests, checks, and merge
+
+  herdr/
+    agents.py          start agents reliably and handle pane/name races
+    client.py          NDJSON socket transport; one connection per request
+    delivery.py        deliver prompts and confirm that the TUI received them
+    ops.py             typed wrappers and snapshot lookups for herdr API methods
+    socket_path.py     resolve the active herdr socket from config and environment
+
+  output/
+    console.py         stable human-readable output consumed by the router
+
+  protocol/
+    messages.py        msgspec types for the herdr wire messages wq reads
+
+  workflows/
+    brainstorming.py   interactive brainstorm workspace and note management
+    build_env.py       persisted metadata shared by build, revise, ship, and clean
+    building.py        worktree creation and the code/review loop
+    cleanup.py         workspace, tab, parent-workspace, and scratch-directory cleanup
+    doctor.py          environment, configuration, daemon, and protocol checks
+    inbox.py           idempotent inbox and router startup
+    listing.py         discover and render active plans and builds
+    loops.py           shared round outcomes and output-file validation
+    planning.py        planner/reviewer loop
+    prompts.py         agent instructions and machine-readable review verdicts
+    revising.py        one additional code turn and review turn
+    shipping.py        push, PR, CI, merge, and post-merge cleanup
+    tabs.py            chat, ask, and tidy inbox tabs
 ```
 
-The workflow layer never touches a socket, and `herdr/` never decides policy. If you find
-yourself reaching for `HerdrClient` inside `workflows/`, that is what `ops.py` is for.
+The package `__init__.py` files only mark package boundaries or export names. Workflow
+modules decide policy and use `HerdrClient` only through its high-level operations;
+`herdr/client.py` alone owns socket framing. The `herdr/` modules handle transport and
+reliability without deciding workflow policy.
 
 ## The one rule that is not style
 
