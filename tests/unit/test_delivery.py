@@ -10,6 +10,7 @@ docstring in herdr/delivery.py.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -117,6 +118,28 @@ async def test_trust_dialog_is_answered(client: HerdrClient, fake: FakeHerdr) ->
 
     assert await delivery.settle(client, "w1:p1") is True
     assert fake.calls("agent.send_keys")[0]["params"]["keys"] == ["enter"]
+
+
+async def test_the_dialog_is_detected_in_a_real_captured_screen(
+    client: HerdrClient, fake: FakeHerdr
+) -> None:
+    """The test above writes the string it then searches for, so it proves the loop works
+    and nothing about whether `TRUST_DIALOG` matches what an agent actually draws.
+
+    This one replays a screen captured from a live Claude Code starting in a fresh
+    directory. It is what stops the constant drifting away from reality unnoticed -- and
+    unnoticed is the whole danger, because a `settle` that silently matches nothing sends
+    the prompt anyway and its Enter answers the security question.
+    """
+    captured = (Path(__file__).parent.parent / "fixtures" / "claude-trust-dialog.txt").read_text()
+    assert delivery.TRUST_DIALOG in captured, (
+        "TRUST_DIALOG no longer appears in the captured screen — recapture it "
+        "(see tests/fixtures/README.md) and fix the constant"
+    )
+
+    fake.on_sequence("agent.read", [_screen(captured), BLANK])
+    fake.on("agent.send_keys", {"type": "ok"})
+    assert await delivery.settle(client, "w1:p1") is True
 
 
 async def test_no_dialog_means_no_keys_sent(client: HerdrClient, fake: FakeHerdr) -> None:

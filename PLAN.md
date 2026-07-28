@@ -209,6 +209,12 @@ Capture real `agent read --source visible` output for the trust dialog and the
 post-dialog dead composer into `tests/fixtures/`. Once Bash is retired these are
 expensive to reproduce.
 
+**Done for the trust dialog** (`tests/fixtures/claude-trust-dialog.txt`, 2026-07-28), and
+it earned its keep immediately: it is the only thing proving `TRUST_DIALOG` matches what
+Claude Code actually draws, rather than matching a string a test wrote itself. The capture
+also confirmed behavior #1's central claim — the pane reports `interactive_ready: true`
+with the dialog up, and reports *exactly the same state* once the dialog is gone.
+
 ---
 
 ## Herdr Layer

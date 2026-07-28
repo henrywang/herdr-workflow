@@ -44,6 +44,26 @@ caller named on the command line, so the answer is yes.
 **Do not try to replace this with events.** `events.subscribe` reports *agent* state. This
 is a *screen* state. No event fires.
 
+**Confirmed live, 2026-07-28**, against Claude Code (Sonnet 5) started in a fresh `/tmp`
+directory with no `--permission-mode`. With the dialog on screen and nothing but a dialog
+answer accepted:
+
+```
+AgentState(status='idle', seq=51, interactive_ready=True)
+```
+
+`idle` and `ready`. After `settle` answered it and the pane reached a real composer, the
+state was **byte-for-byte the same** — same status, same `seq`, same `interactive_ready`.
+Nothing herdr reports distinguishes "ready for a prompt" from "about to eat your prompt and
+answer a security question with its Enter".
+
+The screen is captured at `tests/fixtures/claude-trust-dialog.txt` and replayed by
+`test_the_dialog_is_detected_in_a_real_captured_screen`. That matters more than it looks:
+the other tests build a screen *containing* `TRUST_DIALOG` and then search for it, which
+proves the loop works and nothing about whether the constant matches reality. A `settle`
+that silently matches nothing is indistinguishable from a pane with no dialog — and sends
+the prompt anyway.
+
 ---
 
 ## 2. `agent.prompt` returning OK does not mean the agent took the text
