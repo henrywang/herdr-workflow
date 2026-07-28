@@ -103,7 +103,7 @@ async def collect(client: HerdrClient, root: Path) -> Listing:
 
 
 def render(listing: Listing) -> str:
-    """Plain text, matching the Bash output.
+    """Render the plain-text listing.
 
     The `*` marker is a contract, not decoration: the router prompt says "`revise`
     defaults to the slug marked `*` in `wq list`". Changing this format breaks the router

@@ -124,8 +124,8 @@ def repo(tmp_path: Path, origin: Path) -> Path:
 def master_repo(tmp_path: Path) -> Path:
     """A clone of a repository whose default branch is `master`, with no published HEAD.
 
-    The case Bash's hard-coded `origin/main` could never build in. `build` resolves the
-    base in the parent checkout and records it; `revise` reads it back and diffs in the
+    `build` resolves the base in the parent checkout and records it; `revise` reads it
+    back and diffs in the
     linked worktree -- a different directory, so it is worth proving end to end rather than
     assuming a shared `.git` makes it work.
     """

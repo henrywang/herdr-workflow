@@ -1,8 +1,8 @@
 """CLI tests -- commands invoked exactly as users invoke them.
 
 These cover what the workflow-level tests cannot: that `--json` emits valid JSON, that
-exit codes match the Bash contract the router depends on, and that global options are not
-leaking between invocations.
+exit codes match the router contract, and that global options do not leak between
+invocations.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def test_list_json_is_valid_json(wq_env: Path) -> None:
 
 
 def test_ls_is_an_alias_for_list(wq_env: Path) -> None:
-    """The Bash dispatch accepted `ls`; the router and muscle memory both use it."""
+    """The router and existing scripts use the short alias."""
     assert runner.invoke(cli.app, ["ls"]).stdout == runner.invoke(cli.app, ["list"]).stdout
 
 

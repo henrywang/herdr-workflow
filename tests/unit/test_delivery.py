@@ -1,8 +1,7 @@
 """Prompt delivery: behaviors #1 (trust dialog) and #2 (delivery confirmation).
 
-These are the tests that justify the whole rewrite. Against the Bash implementation the
-only way to exercise any of this was a live agent, minutes and tokens per iteration. Here
-each one is milliseconds.
+The fake daemon exercises these timing-sensitive paths in milliseconds without live
+agents.
 
 The scripted responses mirror a real trace measured against herdr 0.7.5 -- see the module
 docstring in herdr/delivery.py.
@@ -359,7 +358,7 @@ async def test_unknown_polls_do_not_count_as_movement(
 async def test_readiness_ceiling_is_short_enough_for_a_prompt_command(
     client: HerdrClient, fake: FakeHerdr
 ) -> None:
-    """`wq chat` and `wq ask` are documented as returning promptly (go.md).
+    """`wq chat` and `wq ask` must return promptly.
 
     A chat tab's agent was measured never setting interactive_ready, so this ceiling is
     paid in full on every fresh tab. It must stay small -- the receipt loop, not this wait,

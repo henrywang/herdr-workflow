@@ -1,21 +1,15 @@
 """`build.env` -- what `build` records so `revise`, `ship`, `go` and `clean` can pick it up.
 
-**The first four lines are frozen for v0.1.** Bash and Python run side by side during the
-cutover, and a build started by one has to be finishable by the other. The Bash reader is::
+The positional format is kept backward compatible: older files may have three or four
+lines, while current files add the base ref on line five.
 
-    { read -r repo; read -r branch; read -r wt_path; read -r parent || true; } < build.env
-
-which takes the first four lines and ignores whatever follows. That is what makes a fifth
-line safe to add: Python records the base ref there, Bash never looks, and a build.env
-written by either is readable by both.
-
-Line five exists because the base ref is used in four places -- the worktree's branch
+The base ref is used in four places -- the worktree's branch
 point, and the diff range that `build`, `revise` and `ship` each regenerate. Re-deriving
 it in each command and hoping detection is stable would eventually diff a branch against a
 commit it was not cut from. Recording it once is the fix.
 
-Files written before wq recorded the parent workspace have only three lines, and files
-written by Bash have four. Both are read without complaint.
+Files written before wq recorded the parent workspace have only three lines. Older files
+without a base ref have four. Both are read without complaint.
 """
 
 from __future__ import annotations
@@ -31,11 +25,9 @@ class BuildEnv:
     repo: str
     branch: str
     worktree: str
-    # Absent in a build.env written by Bash before wq recorded it, so a build in flight
-    # during the cutover reads back as "no parent workspace to close" rather than failing.
+    # Absent in older files, which means there is no parent workspace to close.
     parent_workspace: str | None = None
-    # Absent in every Bash-written file. Bash always meant `origin/main`, so that is what
-    # a missing line means -- not "unknown".
+    # Older files implicitly used `origin/main`, so that is what a missing line means.
     base: str = DEFAULT_BASE
 
 

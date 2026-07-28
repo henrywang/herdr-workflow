@@ -181,11 +181,9 @@ async def test_up_honours_a_custom_inbox_label(
 
 
 # -- build.env ---------------------------------------------------------------
-# The first four lines are frozen for v0.1: Bash and Python run side by side during the
-# cutover, so a build started by one has to be finishable by the other.
 
 
-def test_build_env_reads_the_bash_four_line_form(tmp_path: Path) -> None:
+def test_build_env_reads_the_legacy_four_line_form(tmp_path: Path) -> None:
     path = tmp_path / "build.env"
     path.write_text("/repo\nwq/slug\n/wt\nw7\n")
     env = build_env.read(path)
@@ -197,18 +195,15 @@ def test_build_env_reads_the_bash_four_line_form(tmp_path: Path) -> None:
     )
 
 
-def test_a_bash_written_file_means_origin_main(tmp_path: Path) -> None:
-    """Bash had no base line because it always meant `origin/main`. A missing line is that
-    answer, not an unknown one -- anything else would diff a Bash-started build against a
-    commit its branch was never cut from."""
+def test_a_legacy_file_means_origin_main(tmp_path: Path) -> None:
+    """Older files implicitly used `origin/main`, so a missing line means that base."""
     path = tmp_path / "build.env"
     path.write_text("/repo\nwq/slug\n/wt\nw7\n")
     assert build_env.read(path).base == "origin/main"
 
 
 def test_build_env_tolerates_the_legacy_three_line_form(tmp_path: Path) -> None:
-    """Files written before wq recorded the parent workspace have three lines, and the
-    Bash reader tolerates that."""
+    """Files written before wq recorded the parent workspace have three lines."""
     path = tmp_path / "build.env"
     path.write_text("/repo\nwq/slug\n/wt\n")
     env = build_env.read(path)
@@ -232,9 +227,8 @@ def test_a_missing_parent_keeps_the_base_on_line_five(tmp_path: Path) -> None:
     assert build_env.read(path).base == "origin/master"
 
 
-def test_bash_can_still_read_a_python_written_file(tmp_path: Path) -> None:
-    """Bash reads exactly four lines and ignores the rest, which is what makes a fifth
-    line safe to add mid-cutover."""
+def test_the_legacy_fields_stay_in_the_first_four_lines(tmp_path: Path) -> None:
+    """Adding the base ref must not move the fields in the legacy format."""
     path = tmp_path / "build.env"
     build_env.write(path, build_env.BuildEnv("/repo", "wq/slug", "/wt", "w7", "origin/develop"))
     first_four = path.read_text().splitlines()[:4]

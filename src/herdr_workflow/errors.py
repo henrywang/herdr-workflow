@@ -1,9 +1,7 @@
 """Error types.
 
-Every error explains what failed, why, and how to fix it. The Bash implementation named
-the escape hatch in the message itself -- "attach with: herdr agent attach <pane>" -- and
-that habit is worth keeping: the person reading the error is usually mid-workflow and
-wants the next command, not a diagnosis.
+Every error explains what failed, why, and how to fix it. The person reading the error is
+usually mid-workflow and wants the next command, not only a diagnosis.
 """
 
 from __future__ import annotations
@@ -68,18 +66,3 @@ class GitError(WqError):
 
 class WorkflowError(WqError):
     """A workflow could not proceed."""
-
-
-class RoundLimitReached(WorkflowError):
-    """A review loop hit its round cap with findings outstanding. Exit code 2.
-
-    **Currently unused.** `wq build` reports its round cap as a `BuildResult` the CLI turns
-    into `typer.Exit(2)`, because stopping at the cap is an outcome to report rather than
-    an error to raise -- the loop has already printed what happened, and an error block
-    with a `why` and a `fix` would be wrong about both.
-
-    Kept because the exit code is a router contract (`go.md:61`) and this is where it is
-    written down. Delete it if Phase 7 finds no use for it either.
-    """
-
-    exit_code = 2

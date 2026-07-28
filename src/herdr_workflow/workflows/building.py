@@ -77,7 +77,7 @@ async def build(client: HerdrClient, config: Config, slug: str, repo_arg: Path) 
     paths = BuildPaths.for_slug(config.root, slug)
 
     # Deliberately *not* "approved": a plan that hit its round cap is still a plan, and
-    # deciding to build it anyway is the user's call. Bash allows this; so does this.
+    # deciding to build it anyway is the user's call.
     if not paths.plan.is_file() or paths.plan.stat().st_size == 0:
         raise WorkflowError(
             f"no plan at {paths.plan}",

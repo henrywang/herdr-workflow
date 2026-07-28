@@ -1,6 +1,6 @@
 """Typed wrappers over the herdr methods wq uses, plus snapshot lookups.
 
-Two conventions carried over from the Bash implementation, both load-bearing:
+Two conventions here are load-bearing:
 
 **Agents are targeted by pane id, never by name.** Names are global in herdr and not
 unique across concurrent workspaces; pane ids are unique by construction.
@@ -187,9 +187,7 @@ async def pane_run(client: HerdrClient, pane_id: str, command: str) -> None:
     **The command is a shell line, so quoting is the caller's job.** There is no argv here
     to keep arguments apart.
 
-    Bash had to sniff `pane run`'s stdout for JSON because it reported failures there while
-    still exiting 0. Over the socket an error is an error response, so that workaround is
-    gone.
+    Socket failures arrive as error responses.
     """
     await client.request(
         "pane.send_input", {"pane_id": pane_id, "text": command, "keys": ["enter"]}

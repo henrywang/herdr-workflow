@@ -13,8 +13,8 @@ That last part is the point. The unit suite runs against a fake herdr daemon and
 `gh`, so you can change the retry logic, the round loops, or the cleanup ordering and know
 within seconds whether you broke something.
 
-The alternative — the way this code was originally developed — is to verify every change by
-running it against real agents, at minutes and real tokens per iteration. If you find
+The alternative is to verify every change by running it against real agents, at minutes
+and real tokens per iteration. If you find
 yourself about to do that, it usually means a fake needs extending rather than that the
 change is untestable.
 

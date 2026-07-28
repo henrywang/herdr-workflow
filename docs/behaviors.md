@@ -263,21 +263,19 @@ This is the backstop that makes the rest safe to get occasionally wrong.
 
 ---
 
-## 10. Read the whole response; do not stream into a short-circuit
+## 10. An API connection serves exactly one request
 
-**Test:** `tests/unit/test_client.py`
+**Test:** `tests/unit/test_client.py::test_each_request_uses_its_own_connection`
 
-In Bash: `herdr status | grep -q` exits as soon as `grep` matches, herdr takes SIGPIPE, and
-`pipefail` turns a healthy server into a failed check. Capture the output, then test it.
+The server writes one newline-delimited response and closes the connection. Reusing the
+socket succeeds once and then fails, while pipelining requests receives only the first
+response.
 
-The Python port cannot reproduce that failure literally, but the underlying rule survives
-and gets sharper: **the socket is a stream shared by responses and unsolicited events.** A
-client that writes a request and reads exactly one line will eventually read an event
-where it expected its answer.
-
-That is why the client has a background reader, a pending-futures map keyed on request id,
-and a separate event path — see
-[protocol-framing.md](protocol-framing.md#events-arrive-on-the-same-connection-without-ids).
+Each request must therefore open its own connection, write one frame, read one frame, and
+close. Concurrent requests use separate connections and need no id-correlation layer. The
+only exception is `events.subscribe`, whose connection remains open after its
+acknowledgement to stream event frames. See
+[protocol-framing.md](protocol-framing.md#one-request-per-connection).
 
 ---
 

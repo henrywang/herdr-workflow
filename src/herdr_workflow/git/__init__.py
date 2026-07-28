@@ -1,15 +1,12 @@
 """The git wq shells out for.
 
-wq drives git through the `git` binary rather than a library, for the same reason the Bash
-version did: the operations are few, the CLI is the interface everyone already knows, and a
-worktree created by `git worktree add` behaves identically whoever created it.
+wq drives git through the `git` binary rather than a library because the operations are
+few, the CLI is the interface everyone already knows, and a worktree created by
+`git worktree add` behaves identically whoever created it.
 
-One deliberate divergence from Bash lives here. Bash hard-coded `origin/main` as the base
-ref -- in the worktree it created, and in the diff range it reviewed. That is a personal
-assumption a shared tool must not make: plenty of repositories still branch from `master`,
-and plenty branch from `develop`. `resolve_base` asks the repository instead, and the
-answer is recorded in `build.env` so every later command diffs against the same commit the
-branch was cut from. See docs/parity.md.
+Repositories do not always use `main` as their default branch. `resolve_base` asks the
+repository which base to use, and the answer is recorded in `build.env` so every later
+command diffs against the same commit the branch was cut from.
 """
 
 from __future__ import annotations
@@ -19,8 +16,7 @@ from pathlib import Path
 
 from herdr_workflow.errors import GitError
 
-# Tried in order when the remote does not publish a HEAD. Bash's hard-coded default comes
-# first, so parity holds on any repository where Bash worked at all.
+# Tried in order when the remote does not publish a HEAD.
 _FALLBACK_BRANCHES = ("main", "master")
 
 
@@ -84,9 +80,8 @@ def toplevel(path: Path) -> Path:
 def fetch(repo: Path, remote: str = "origin") -> None:
     """Update remote refs before cutting a branch.
 
-    Fatal, matching Bash under `set -e`: building on a stale `origin/main` produces a diff
-    against a commit that is not what anyone will review, and a branch cut from the wrong
-    place is worse than a clear failure.
+    Building from stale remote refs produces a diff against a commit that is not what
+    anyone will review, so a failed fetch is fatal.
     """
     _run(["fetch", remote], repo, what=f"fetch {remote}")
 
@@ -124,8 +119,7 @@ def branch_of(base: str) -> str:
 
     The base ref is recorded remote-qualified because that is what a diff range wants. A
     pull request's `--base` and a rebase target want the branch name. Derived once here so
-    three call sites cannot disagree -- the Bash implementation hard-coded `main` in all of
-    them.
+    three call sites cannot disagree.
     """
     return base.split("/", 1)[1] if "/" in base else base
 

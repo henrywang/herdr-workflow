@@ -580,8 +580,7 @@ def cmd_clean(slug: Annotated[str, typer.Argument(help="The slug to drop.")]) ->
     _guard(body)
 
 
-# Aliases the Bash implementation accepted. The router and years of muscle memory use
-# them, so they are part of the contract rather than a convenience.
+# The router and existing scripts use these aliases, so they are part of the contract.
 @app.command("ls", hidden=True)
 def cmd_ls() -> None:
     """Alias for `list`."""

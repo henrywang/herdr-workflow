@@ -135,8 +135,7 @@ async def test_an_empty_plan_is_refused(
 async def test_an_unapproved_plan_can_still_be_built(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
 ) -> None:
-    """Deliberate, and inherited from Bash: a plan that hit its own round cap is still a
-    plan, and building it anyway is the user's call rather than wq's."""
+    """A plan that hit its round cap is still a plan; proceeding is the user's call."""
     root = tmp_path / "wq"
     paths = with_plan(root)
     (paths.dir / "review.md").write_text(f"blocking findings\n\n{prompts.VERDICT_CHANGES}\n")
@@ -370,8 +369,7 @@ async def test_a_finished_build_is_what_wq_list_looks_for(
 async def test_the_worktree_is_branched_from_the_resolved_base(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
 ) -> None:
-    """Bash hard-coded `origin/main`. The base is resolved, then used for both the branch
-    point and the diff range -- one answer, so they cannot disagree."""
+    """The resolved base is used for both the branch point and the diff range."""
     root = tmp_path / "wq"
     paths = with_plan(root)
     Scenario(fake, paths, repo, reviews=[prompts.VERDICT_APPROVED])

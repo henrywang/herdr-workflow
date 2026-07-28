@@ -157,7 +157,7 @@ async def test_a_revised_build_is_the_one_wq_list_marks(
 async def test_a_master_repo_can_be_built_and_then_revised(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, master_repo: Path
 ) -> None:
-    """The repository Bash's hard-coded `origin/main` could never touch, end to end.
+    """Exercise a `master` repository end to end.
 
     `build` resolves the base in the parent checkout and records it; `revise` reads it back
     and diffs in the *linked worktree*, a different directory. A linked worktree shares

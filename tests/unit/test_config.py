@@ -107,5 +107,5 @@ def test_missing_explicit_config_is_an_error(tmp_path: Path) -> None:
 
 
 def test_no_default_notes_path() -> None:
-    """The Bash version hard-coded an iCloud Obsidian vault. A public tool cannot."""
+    """A notes location is personal and must be configured explicitly."""
     assert config_module.Config().paths.notes is None

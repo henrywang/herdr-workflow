@@ -81,8 +81,7 @@ class Loops:
 @dataclass(frozen=True)
 class Paths:
     root: Path = Path("~/Workspace/.wq")
-    # Note sink for `wq brainstorm`. No default: the Bash version hard-coded an iCloud
-    # Obsidian path, which is exactly the personal assumption a public tool must not make.
+    # Note sink for `wq brainstorm`. No default because a notes location is personal.
     notes: Path | None = None
 
 

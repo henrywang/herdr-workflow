@@ -1,8 +1,7 @@
 """Wire types for the herdr socket API.
 
-Hand-written for now, covering only what Phase 1 needs plus the agent fields the loop
-phases will need. The generator that emits all 89 methods from `herdr api schema --json`
-comes once there is a working client to validate it against -- see docs/protocol-framing.md.
+These types intentionally cover only the methods and fields wq reads. See
+`docs/protocol-framing.md` for the transport contract.
 
 Field names match the wire exactly, and required/optional follows the shipped schema
 rather than guesswork. msgspec ignores unknown fields, so a herdr release that adds a
@@ -208,8 +207,7 @@ class WorktreeCreated(msgspec.Struct):
     """Result of `worktree.create`.
 
     Its own result type, not `workspace_created`: the wire `type` differs and it carries an
-    extra `worktree`. The rest of the shape matches, so `root_pane` is available directly
-    and the Bash implementation's snapshot lookup for the first pane is not needed.
+    extra `worktree`. The rest of the shape matches, so `root_pane` is available directly.
 
     **`worktree` is deliberately not modelled.** wq never reads it, msgspec ignores
     unknown fields, and modelling a field you do not use can only ever fail -- which is

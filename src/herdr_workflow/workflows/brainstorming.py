@@ -5,8 +5,7 @@ until agents finish; this one delivers the opening prompt and hands you the pane
 at this stage kills the divergence you came for, so there is no review loop and no second
 model -- just somewhere to think, with the note kept current as you talk.
 
-The note lives in a directory *you* choose. The Bash implementation hard-coded an iCloud
-Obsidian path, which is exactly the personal assumption a shared tool must not make, so
+The note lives in a directory *you* choose. Because that location is personal,
 `paths.notes` has no default and the error when it is unset says how to set it.
 """
 

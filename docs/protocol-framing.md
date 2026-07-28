@@ -1,7 +1,7 @@
 # Herdr socket API: framing and transport
 
-Findings from the Phase 0 spike. This is the artifact that makes the spike reusable —
-read this instead of re-deriving it.
+This documents the transport behavior that the socket client relies on, including details
+that are not covered by the upstream API documentation.
 
 Sources: [herdr socket API docs](https://herdr.dev/docs/socket-api/), the bundled schema
 (`herdr api schema --json`), and `~/.config/herdr/herdr-server.log`.

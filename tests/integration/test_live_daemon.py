@@ -113,11 +113,8 @@ async def test_worktree_create_decodes_without_creating_anything(live: HerdrClie
 
     A bad `cwd` makes herdr reject the call before it creates anything, so this exercises
     the same decode path against the real server with no side effects to clean up. It
-    proves the request shape reaches the handler; the response struct is proven by
-    `wq build`'s live runs, recorded in docs/parity.md.
-
-    Phase 7 models `worktree.remove` and `worktree.list`, and `worktree.list` returns the
-    *other* struct -- the same fork in the road, one phase away.
+    proves the request shape reaches the handler. The successful response deliberately
+    models only the fields `wq build` reads; see behavior #12.
     """
     with pytest.raises(ApiError) as caught:
         await live.request(

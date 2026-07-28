@@ -91,8 +91,7 @@ def wq_command() -> str:
 def ship_command(slug: str, root: Path) -> str:
     """The shell line typed into the ship tab.
 
-    `WQ_ROOT` is passed explicitly -- a **deliberate divergence from Bash**, which typed a
-    bare `wq go <slug>`. The tab is a fresh login shell, so nothing from the invoking
+    `WQ_ROOT` is passed explicitly. The tab is a fresh login shell, so nothing from the invoking
     process's environment follows it there; a `WQ_ROOT` set inline or exported by a
     wrapper would be silently lost and `go` would look for a build that, from where it is
     standing, does not exist.
@@ -145,7 +144,7 @@ async def running_in_agent_pane(client: HerdrClient) -> bool:
     the router, or a build pane it delegated to. The shell tab `wq ship` opens has no agent
     in it, so the sanctioned path passes straight through.
 
-    **Fails open**, matching Bash: if the agent list cannot be read, `go` proceeds. The
+    **Fails open:** if the agent list cannot be read, `go` proceeds. The
     trade is deliberate. Failing closed would block a legitimate ship whenever herdr
     hiccups, and the guard is a backstop for a rule the router's prompt already states --
     not the only thing standing between the user and a bad merge.

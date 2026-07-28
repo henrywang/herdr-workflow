@@ -1,8 +1,6 @@
 """A fake herdr daemon, speaking the real wire protocol over a real unix socket.
 
-This is the thing that makes the rewrite worth doing. Against the Bash implementation the
-only way to exercise a retry path was to run it live against real agents -- minutes and
-tokens per iteration. Here it is a sub-second test.
+It makes retry paths testable in under a second without running live agents.
 
 It deliberately speaks NDJSON over an actual socket rather than mocking the client, so
 the framing, the id correlation, and the event interleaving are all under test.

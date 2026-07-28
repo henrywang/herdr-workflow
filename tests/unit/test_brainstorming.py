@@ -200,9 +200,8 @@ async def test_a_focus_that_fails_does_not_fail_the_command(
 async def test_an_unconfigured_notes_directory_says_how_to_set_it(
     client: HerdrClient, fake: FakeHerdr
 ) -> None:
-    """The Bash implementation hard-coded an iCloud Obsidian path. That is exactly the
-    personal assumption a shared tool must not ship with, so there is no default -- which
-    makes this error the command's real front door."""
+    """There is no universal notes location, so the command must explain its required
+    configuration."""
     with pytest.raises(ConfigError) as caught:
         await brainstorming.brainstorm(client, _config(None), "x", "an idea")
     assert "WQ_VAULT" in (caught.value.fix or "")

@@ -1,8 +1,7 @@
 """Terminal output.
 
-Matches the Bash implementation's shape deliberately: `==>` progress lines on stdout,
-`wq: ` errors on stderr. The router reads this output, and people have muscle memory for
-it, so it is not a free choice.
+Progress uses `==>` on stdout and errors use `wq: ` on stderr. The router reads this
+output, so its shape is a contract.
 """
 
 from __future__ import annotations

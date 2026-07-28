@@ -46,13 +46,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/herdr_workflow"]
 
-[tool.hatch.build.targets.sdist]
-# PLAN.md and docs/parity.md are working documents for the port from the Bash
-# implementation this replaces. They cite line numbers in a script nobody outside that
-# machine has, and a user installing `wq` has no reason to read either. They stay in the
-# repository while both implementations run side by side, and leave when the Bash one does.
-exclude = ["PLAN.md", "docs/parity.md"]
-
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]

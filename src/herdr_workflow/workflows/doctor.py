@@ -1,9 +1,7 @@
 """`wq doctor` -- verify the environment, and say how to fix what is broken.
 
-This is the one command that does not exist in the Bash implementation, and it earns its
-place the first time herdr bumps its protocol. A shared tool against a young API breaks
-for strangers in ways it never breaks for its author; without this the symptom is a
-decode error deep inside a workflow, which reads like a wq bug.
+This catches missing tools, invalid configuration, and protocol drift before they surface
+as failures deep inside a workflow.
 """
 
 from __future__ import annotations

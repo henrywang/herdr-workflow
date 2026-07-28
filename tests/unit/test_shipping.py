@@ -192,9 +192,7 @@ def test_the_shipped_command_quotes_everything(tmp_path: Path) -> None:
 
 
 def test_the_shipped_command_carries_the_scratch_root(tmp_path: Path) -> None:
-    """A deliberate divergence from Bash. The ship tab is a fresh shell, so a WQ_ROOT the
-    caller set would otherwise be lost and `go` would look for a build that, from where it
-    is standing, does not exist."""
+    """The ship tab is a fresh shell, so it must receive the configured scratch root."""
     import shlex
 
     command = shipping.ship_command("x", tmp_path / "root")
@@ -241,8 +239,8 @@ async def test_a_plain_shell_pane_passes_straight_through(
 async def test_the_guard_fails_open_when_the_agent_list_cannot_be_read(
     client: HerdrClient, fake: FakeHerdr, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Deliberate, and matching Bash. Failing closed would block a legitimate ship every
-    time herdr hiccups, and this guard is a backstop for a rule the router's prompt already
+    """Failing closed would block a legitimate ship every time herdr hiccups, and this
+    guard is a backstop for a rule the router's prompt already
     states -- not the only thing between the user and a bad merge."""
     monkeypatch.setenv("HERDR_PANE_ID", "w3:p1")
     fake.on_error("agent.list", "internal", "boom")
@@ -338,8 +336,7 @@ async def test_the_pr_base_comes_from_the_recorded_base(
     master_repo: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bash hard-coded `--base main`. A master repo would have opened its PR against a
-    branch that does not exist."""
+    """A master repository must open its PR against the recorded base branch."""
     config, fake_gh, _paths = await _go_ready(client, fake, tmp_path, master_repo, monkeypatch)
     await shipping.go(client, config, "x")
 

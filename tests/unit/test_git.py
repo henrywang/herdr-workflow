@@ -57,8 +57,7 @@ def test_the_remote_head_is_used_when_published(repo: Path) -> None:
 
 
 def test_a_master_repo_resolves_to_master(tmp_path: Path) -> None:
-    """The reason this function exists. Bash hard-coded `origin/main`, which is wrong for
-    every repository that never renamed its default branch."""
+    """Repositories that retain the traditional default branch must resolve correctly."""
     work = tmp_path / "old"
     work.mkdir()
     _git(work, "init", "--initial-branch=master")
@@ -77,7 +76,7 @@ def test_a_master_repo_resolves_to_master(tmp_path: Path) -> None:
 
 
 def test_main_wins_over_master_without_a_published_head(repo: Path) -> None:
-    """Parity: wherever Bash worked, Python picks the same base."""
+    """Prefer main when multiple conventional fallback branches exist."""
     _git(repo, "remote", "set-head", "origin", "--delete")
     assert git.resolve_base(repo) == "origin/main"
 
@@ -150,8 +149,7 @@ def test_a_bad_base_fails_with_gits_own_message(repo: Path, tmp_path: Path) -> N
 
 
 def test_fetch_reports_a_missing_remote(tmp_path: Path) -> None:
-    """Fatal on purpose, matching Bash under `set -e`: a branch cut from a stale base is
-    worse than a clear failure."""
+    """A branch cut from a stale base is worse than a clear failure."""
     lonely = tmp_path / "lonely"
     lonely.mkdir()
     _git(lonely, "init", "--initial-branch=main")
