@@ -42,6 +42,30 @@ You also need [herdr](https://herdr.dev) running, `git`, and at least two agent 
 `claude` and `pi` are what the defaults assume. `gh` is needed only by `wq ship` / `wq go`.
 `wq doctor` checks all of it and explains anything missing.
 
+## Architecture
+
+`wq` orchestrates; it does not run models itself. Herdr owns the terminal workspaces and
+panes, while the agent CLIs do their work against shared files and an isolated Git
+worktree.
+
+```mermaid
+flowchart LR
+    actor[User or agent router] --> wq[wq process]
+    wq -->|NDJSON socket API| herdr[herdr daemon]
+
+    subgraph terminal[Terminal workspaces managed by herdr]
+        panes[Planner, coder, and reviewer panes]
+        agents[Claude Code and Pi agents]
+        panes --> agents
+    end
+
+    herdr -->|Create panes, start agents, deliver prompts| panes
+    agents <--> artifacts[(Plans, reviews, and patches)]
+    agents <--> worktree[(Isolated Git worktree)]
+    wq -->|Check status and artifacts| artifacts
+    wq -->|Create branches, diff, push, and merge| worktree
+```
+
 ## Workflow
 
 The same slug carries the plan, build, and review artifacts through the whole workflow.
