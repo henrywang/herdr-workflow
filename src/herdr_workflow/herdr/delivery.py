@@ -231,6 +231,77 @@ async def deliver(client: HerdrClient, pane: str, text: str, attempts: int = 5) 
     )
 
 
+# A pane can flash idle between steps of a single turn, so idle is confirmed by holding.
+SETTLE_CONFIRM_DELAY = 3.0
+
+
+async def wait_settled(client: HerdrClient, pane: str, turn_timeout_ms: int) -> str:
+    """Block until a turn ends, and return the status it ended in. Behavior #5.
+
+    `done` is where a finished turn lands, but it does not stay there -- a pane that has
+    been read settles back to `idle`. Measured: `done` held for ~11s and then became
+    `idle` with the sequence unchanged. Waiting on `done` alone therefore hangs for the
+    full turn timeout -- thirty minutes by default -- on work that finished minutes ago.
+
+    So `idle` has to be accepted too. `idle` is normally ambiguous, because it is also the
+    state of a pane that has not picked the prompt up yet -- but `deliver` has already
+    proven the prompt was taken, so here it means finished.
+
+    It is still confirmed by holding, because a pane can flash idle between steps of one
+    turn.
+    """
+    deadline = time.monotonic() + turn_timeout_ms / 1000
+    while True:
+        result = await client.call(
+            "agent.wait",
+            AgentResult,
+            {"target": pane, "until": ["done", "blocked", "idle"], "timeout_ms": turn_timeout_ms},
+            # Outlive the server's own wait, or our request timeout fires first and turns a
+            # long healthy turn into a spurious failure.
+            timeout=turn_timeout_ms / 1000 + 30,
+        )
+        status = result.agent.agent_status
+        if status != "idle":
+            return status
+
+        await asyncio.sleep(SETTLE_CONFIRM_DELAY)
+        held = (await agent_state(client, pane)).status
+        if held in ("idle", "done", "blocked"):
+            return held
+
+        if time.monotonic() >= deadline:
+            raise WorkflowError(
+                f"pane {pane} never finished its turn",
+                why=f"no terminal state within {turn_timeout_ms // 60000} minutes",
+                fix=f"attach with: herdr agent attach {pane}",
+            )
+
+
+async def ask(
+    client: HerdrClient,
+    pane: str,
+    text: str,
+    *,
+    turn_timeout_ms: int,
+    attempts: int = 5,
+) -> None:
+    """Send a prompt and block until the agent finishes.
+
+    `blocked` means the agent is sitting on a question. Surface that as itself, with the
+    screen attached, rather than letting it fall through as a mysteriously missing output
+    file.
+    """
+    await deliver(client, pane, text, attempts=attempts)
+    status = await wait_settled(client, pane, turn_timeout_ms)
+    if status == "blocked":
+        screen = await read_screen(client, pane, lines=25)
+        raise WorkflowError(
+            f"the agent in pane {pane} is waiting for input",
+            why=f"it stopped to ask something:\n\n{screen.strip()}\n",
+            fix=f"attach and answer it: herdr agent attach {pane}",
+        )
+
+
 async def _confirm_delivery(client: HerdrClient, pane: str, before: AgentState) -> bool:
     """Did the agent take the prompt?
 

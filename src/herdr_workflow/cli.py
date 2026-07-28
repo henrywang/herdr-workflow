@@ -26,7 +26,7 @@ from herdr_workflow.errors import WqError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import connect
 from herdr_workflow.output import console
-from herdr_workflow.workflows import cleanup, inbox, listing, tabs
+from herdr_workflow.workflows import cleanup, inbox, listing, planning, tabs
 from herdr_workflow.workflows import doctor as doctor_workflow
 
 app = typer.Typer(
@@ -301,6 +301,44 @@ def _emit_tab(result: tabs.TabResult) -> None:
                 indent=2,
             )
         )
+
+
+@app.command("plan")
+def cmd_plan(
+    slug: Annotated[str, typer.Argument(help="Short name for this piece of work.")],
+    request: Annotated[list[str], typer.Argument(help="What you want planned.")],
+) -> None:
+    """Run the plan <-> review loop and write plan.md."""
+
+    def body() -> None:
+        cfg = _ctx.config
+        path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
+
+        async def go() -> planning.PlanResult:
+            async with connect(path) as client:
+                return await planning.plan(client, cfg, slug, " ".join(request))
+
+        result = _run(go())
+        if _ctx.json:
+            print(
+                json.dumps(
+                    {
+                        "slug": result.slug,
+                        "workspace_id": result.workspace_id,
+                        "plan": str(result.plan_file),
+                        "review": str(result.review_file),
+                        "rounds": result.rounds,
+                        "approved": result.approved,
+                    },
+                    indent=2,
+                )
+            )
+            return
+        console.log(f"plan:   {result.plan_file}")
+        console.log(f"review: {result.review_file}")
+        console.log(f"next:   wq build {result.slug} <repo>")
+
+    _guard(body)
 
 
 @app.command("clean")

@@ -12,8 +12,10 @@ snapshot already knows where everything is. Nothing to persist, nothing to drift
 
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 
+from herdr_workflow.errors import ApiError, HerdrError
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.protocol.messages import (
     Agent,
@@ -156,3 +158,16 @@ async def agent_list(client: HerdrClient) -> list[Agent]:
 
 async def agent_by_pane(client: HerdrClient, pane_id: str) -> Agent | None:
     return next((a for a in await agent_list(client) if a.pane_id == pane_id), None)
+
+
+# -- notifications -----------------------------------------------------------
+
+
+async def notify(client: HerdrClient, title: str, body: str) -> None:
+    """Tell the user a long-running loop finished. Never fatal.
+
+    A blocking command that has already done its work must not fail because a toast could
+    not be shown.
+    """
+    with suppress(ApiError, HerdrError):
+        await client.request("notification.show", {"title": title, "body": body, "sound": "done"})
