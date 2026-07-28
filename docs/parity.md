@@ -322,6 +322,7 @@ verified live before `ship` was written.
 checked without a real merge: `gh pr create` through merge and cleanup, covered by unit
 tests against a fake `gh` and waiting on a live run the user authorises.
 
-`wq --help` will differ — Bash generates it by `sed`-ing its own header comment block,
-Typer generates its own. See PLAN.md; the open question is whether the router depends on
-the current format.
+`wq --help` differs, and that is now a settled deviation rather than an open question.
+Bash generates it by `sed`-ing its own header comment block; Typer generates its own.
+**The router does not read it** — `go.md` carries its own command table and never shells
+out to `wq --help` — so Typer's is taken as-is.

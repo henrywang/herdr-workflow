@@ -373,9 +373,10 @@ new finding deserves your eyes rather than an automatic rewrite.
 Global options: `--help`, `--version`, `--json`, `--verbose`, `--debug`, `--config`.
 
 Note: Bash generates `--help` by `sed`-ing its own header comment block (`wq:921`), so
-the current help text is exactly those usage lines. Typer will generate different-looking
-help. Decide whether the router depends on the current format; if it does not, take
-Typer's.
+the current help text is exactly those usage lines. Typer generates its own.
+
+**Resolved:** the router does not depend on the format — `go.md` carries its own command
+table and never shells out to `wq --help`. Typer's help is taken as-is.
 
 ---
 

@@ -4,9 +4,10 @@
 *different model* reviews adversarially, they iterate under a hard round cap, and the
 result ships as a merged pull request.
 
-> **Status: early.** Phase 1 (`list`, `doctor`) works. The remaining commands are being
-> ported from a Bash implementation that has been in daily use — see
-> [PLAN.md](PLAN.md) for the order.
+> **Status: all 13 commands work**, ported from a Bash implementation that has been in
+> daily use. Every one has been driven live against a real herdr daemon and real agents;
+> the push-to-merge half of `wq go` is covered by tests against a fake `gh` rather than a
+> real merge. See [docs/parity.md](docs/parity.md) for what was checked and how.
 
 ## Two ideas worth stealing, even if you never run this
 
@@ -24,16 +25,67 @@ largest token sink in a loop like this.
 
 **2. [`docs/behaviors.md`](docs/behaviors.md) — what actually breaks when you drive
 coding-agent TUIs unattended.**
-Ten failure modes discovered the hard way. A pane reports "ready" while it will silently
-swallow your prompt. `agent prompt` returning OK does not mean the agent took the text.
-`done` is not a state that persists. If you are scripting Claude Code, Codex, or Amp,
-you will hit these whether or not you use herdr.
+Thirteen failure modes discovered the hard way, each with the test that pins it. A pane
+reports "ready" while it will silently swallow your prompt. `agent prompt` returning OK
+does not mean the agent took the text. `done` is not a state that persists. `gh pr checks`
+says "no checks reported" *before* CI starts, which reads exactly like a failure and means
+the opposite. If you are scripting Claude Code, Codex, or Amp, you will hit these whether
+or not you use herdr.
 
 ## Install
 
 ```bash
 uv tool install herdr-workflow
 wq doctor
+```
+
+You also need [herdr](https://herdr.dev) running, `git`, and at least two agent CLIs —
+`claude` and `pi` are what the defaults assume. `gh` is needed only by `wq ship` / `wq go`.
+`wq doctor` checks all of it and explains anything missing.
+
+## A worked example
+
+One feature, start to finish. Each command blocks until its agents are done, then tells you
+the next one.
+
+```bash
+wq plan  auth "add token refresh to the API client"
+```
+
+A planner and a reviewer open side by side in their own workspace. The planner writes
+`plan.md`; the reviewer attacks it and writes `review.md` ending in a verdict line. They
+iterate until it is approved or the round cap is hit. **Read the plan before continuing** —
+this is the cheap place to disagree.
+
+```bash
+wq build auth ~/code/my-api
+```
+
+A worktree on `wq/auth`, cut from whatever your repo actually branches from. A code agent
+implements and commits; a *different* model reviews the diff. Exits **2** if the round cap
+is reached with findings outstanding, so a script can tell "unreviewed code on a branch"
+from "wq broke".
+
+```bash
+wq revise auth "use the existing retry helper instead of a new one"
+```
+
+One more code turn and one review turn, driven by you rather than by the reviewer. Writes
+`revise.patch` — just what this turn changed — alongside the full `diff.patch`.
+
+```bash
+wq ship auth
+```
+
+Opens a plain shell tab and runs `wq go` there: push, PR, wait for CI, squash-merge, then
+remove the worktree, delete both branches and close the workspaces. `ship` returns
+immediately; you watch it happen in the tab.
+
+At any point:
+
+```bash
+wq list                # what is running; `*` marks the most recently worked build
+wq clean auth          # drop it all and start over
 ```
 
 ## Commands
@@ -101,9 +153,14 @@ uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 
 Integration tests need a running daemon: `uv run pytest -m integration`.
 
-- [docs/protocol-framing.md](docs/protocol-framing.md) — the socket API, established
-- [docs/parity.md](docs/parity.md) — how Bash/Python parity is checked, and what has been
-- [docs/behaviors.md](docs/behaviors.md) — the failure-mode catalogue
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how the pieces fit together.
+
+- [docs/behaviors.md](docs/behaviors.md) — the failure-mode catalogue, and the most useful
+  file here if you are scripting agent TUIs at all
+- [docs/protocol-framing.md](docs/protocol-framing.md) — the herdr socket contract, as
+  established by probing a real daemon
+- [docs/parity.md](docs/parity.md) — how Bash/Python parity is checked, what has been
+  checked, and every deliberate deviation
 - [PLAN.md](PLAN.md) — architecture and migration order
 
 ## License
