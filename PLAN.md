@@ -450,8 +450,8 @@ Treat the Bash implementation as the specification. Do not translate line-by-lin
 4. **Pick the validation library**; generate `models.py` from `herdr api schema --json`.
 5. **Audit CLI conveniences with no socket method** (starting with `pane run`).
 
-**Status:** Phases 0–5 are done and live-validated. `list`, `doctor`, `up`, `chat`, `ask`,
-`tidy`, `plan`, `build`, `clean` — 9 of 13. Remaining: `revise`, `brainstorm`, `ship`, `go`.
+**Status:** Phases 0–6 are done and live-validated. `list`, `doctor`, `up`, `chat`, `ask`,
+`tidy`, `plan`, `build`, `revise`, `clean` — 10 of 13. Remaining: `brainstorm`, `ship`, `go`.
 
 ### Phase 1 — read-only
 `list`, `doctor`
@@ -482,6 +482,13 @@ the `1` of a real failure.
 
 ### Phase 6 — revise
 `revise`
+
+Exactly one code turn and one review turn — `build` had the bounded loop, and from here
+the user is the round counter. Exits **0** whether the reviewer approves or not: findings
+from a revise are the thing you asked for.
+
+Two diffs with two ranges: `diff.patch` three-dot from the recorded base, `revise.patch`
+two-dot from the pre-turn `HEAD`.
 
 ### Phase 7 — ship
 `brainstorm`, `ship`, `go` (including the agent-pane guard and merge/cleanup ordering)

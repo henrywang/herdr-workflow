@@ -7,7 +7,7 @@ their output. This file records how parity is checked and what has been checked 
 Parity cannot be a unit test: it needs the Bash script, a real herdr daemon, and real
 state. So it is a procedure, run at the end of each phase.
 
-**Last run:** Phase 4, against herdr 0.7.5.
+**Last run:** Phase 6, against herdr 0.7.5.
 
 ---
 
@@ -169,6 +169,42 @@ The fake now sends the real payload.
 `interactive_ready` was absent again, on the reviewer pane, and the prompt landed anyway.
 That is four phases running.
 
+### `wq revise` — Phase 6
+
+Built `calc` first (80s, approved in round 1), then revised it — "also add a divide
+function that raises ValueError on division by zero, with a test for that case":
+
+```
+==> revising
+==> reviewing the change
+pane w2G:p2 never reported interactive_ready; prompting anyway
+==> approved
+```
+
+64s, exit 0. **The two ranges came out cleanly distinct**, which is the whole point of the
+command:
+
+| | added lines |
+| --- | --- |
+| `diff.patch` — three-dot, whole branch | `multiply`, `divide`, and all three tests |
+| `revise.patch` — two-dot, this turn | `divide` and its two tests only |
+
+Two commits on `wq/calc`, and `wq list` marked `calc` with `*` afterwards — the router
+contract that makes `wq revise` default to the right slug.
+
+Two guards checked live, both giving the remedy Bash gives:
+
+```
+wq: no build for nope
+    fix: run: wq build nope <repo>
+
+wq: worktree /private/tmp/wq-p6/demo-worktrees/calc is gone
+    why: calc has already been shipped or cleaned
+```
+
+`wq clean calc` then closed both the build workspace and the recorded parent, leaving the
+session exactly as it started. `interactive_ready` absent again, on the reviewer pane.
+
 ---
 
 ## Known deviations
@@ -213,8 +249,7 @@ that works unless you switch implementations mid-build.
 
 ## Not yet checked
 
-Commands not yet ported: `brainstorm`, `revise`, `ship`, `go`. Each gets a parity run as
-it lands.
+Commands not yet ported: `brainstorm`, `ship`, `go`. Each gets a parity run as it lands.
 
 `wq --help` will differ — Bash generates it by `sed`-ing its own header comment block,
 Typer generates its own. See PLAN.md; the open question is whether the router depends on
