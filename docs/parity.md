@@ -82,6 +82,24 @@ neither implementation collides with the other's agents.
 
 ---
 
+### `wq chat`, `wq ask`, `wq tidy` — Phase 3
+
+Run live against a throwaway inbox (`WQ_INBOX_LABEL=wq-p3`), with a real `pi` agent:
+
+- `chat` created the tab, delivered the prompt, and the agent answered `CHAT-OK`
+- a second `chat` reused the same tab (`created_tab: false`) — no second agent
+- `ask` created a timestamped `ask-033837` tab scoped to the cwd
+- `tidy` closed the finished ask tab and left `router` and `chat` untouched
+
+Timing matters here, because `go.md` documents `chat` and `ask` as returning promptly:
+**6s into a fresh tab, 4s into a warm one.** An earlier build waited the full 60s
+readiness ceiling on a fresh tab — see behavior #2 on why that ceiling is now 10s.
+
+Not directly diffable against Bash: both are fire-and-forget, so there is no output to
+compare beyond the `tab <label> — close it with: wq tidy` line, which matches.
+
+---
+
 ## Known deviations
 
 ### ANSI colour on non-TTY output — intentional
@@ -95,20 +113,6 @@ the escapes.
 
 If byte-identical captured output is ever needed, `output/console.py` is the one place to
 change.
-
----
-
-### `wq chat`, `wq ask`, `wq tidy` — Phase 3
-
-Run live against a throwaway inbox (`WQ_INBOX_LABEL=wq-p3`), with a real `pi` agent:
-
-- `chat` created the tab, delivered the prompt, and the agent answered `CHAT-OK`
-- a second `chat` reused the same tab (`created_tab: false`) — no second agent
-- `ask` created a timestamped `ask-033837` tab scoped to the cwd
-- `tidy` closed the finished ask tab and left `router` and `chat` untouched
-
-Not directly diffable against Bash: both are fire-and-forget, so there is no output to
-compare beyond the `tab <label> — close it with: wq tidy` line, which matches.
 
 ---
 

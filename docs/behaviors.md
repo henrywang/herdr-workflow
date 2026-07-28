@@ -72,26 +72,28 @@ enters a state at all.
 
 ### `interactive_ready` cannot gate delivery
 
-**[verified, herdr 0.7.5]** The field is **optional in the schema**, and its behaviour is
-inconsistent between panes that are both perfectly healthy:
+**[verified, herdr 0.7.5]** The field is **optional in the schema**, and it is not
+reliably set — including across two runs of *the same command on the same kind of pane*:
 
-| Pane | `interactive_ready` |
-|------|--------------------|
-| A `pi` agent in a workspace root pane | absent for ~2s, then `True` |
-| A `pi` agent in a `wq chat` tab's root pane | **never set at all** |
+| Observation | `interactive_ready` |
+|-------------|--------------------|
+| `pi` agent in a workspace root pane | absent ~2s, then `True` |
+| `pi` agent in a fresh `wq chat` tab, run A | **never set** (60s of polling) |
+| `pi` agent in a fresh `wq chat` tab, run B | `True` within 10s |
 
-In the second case the prompt was still delivered and answered correctly — `CHAT-OK` came
-back — with `state_change_seq` moving exactly as expected. So a pane can be entirely
-ready while herdr never says so.
+Run A still delivered its prompt and got its answer back, with `state_change_seq` moving
+exactly as expected. So a pane can be entirely ready while herdr never says so — and
+whether it says so is not a property of the pane you can predict.
 
-**This makes it a warm-up hint, not a gate.** The Bash implementation's `agent_ready()`
-treats it as a hard requirement and dies after 60 seconds with *"agent in pane X never
-became ready for input"*. On the pane above, that path would have failed a working
-`wq chat`.
+**This makes it a warm-up hint, not a gate.** Two consequences:
 
-`wait_ready` therefore returns a boolean instead of raising, logs when readiness was never
-observed, and prompts anyway. The delivery confirmation below is the real guard: it catches
-everything readiness would have caught, plus the cases readiness cannot see.
+1. **Never block on it for long.** The ceiling is 10s and paid in full whenever the hint
+   does not arrive. The Bash implementation's `agent_ready()` instead treats it as a hard
+   requirement and *dies* after 60 seconds with *"agent in pane X never became ready for
+   input"* — on run A above, that path would have failed a `wq chat` that was working
+   perfectly.
+2. **Never build correctness on it.** `wait_ready` returns a boolean rather than raising,
+   logs when the hint never came, and prompts anyway. The delivery receipt is the guard.
 
 Our model types it `bool | None`, because *absent* and *false* are different claims.
 

@@ -280,3 +280,66 @@ async def test_the_dialog_is_cleared_before_every_attempt(
     await delivery.deliver(client, "w1:p1", "hello", attempts=3)
     keys = [c["params"]["keys"] for c in fake.calls("agent.send_keys")]
     assert ["enter"] in keys
+
+
+# -- the unknown-state false positive ----------------------------------------
+
+
+async def test_delivery_never_starts_from_an_unknown_state(
+    client: HerdrClient, fake: FakeHerdr
+) -> None:
+    """An `unknown` sample carries seq 0, and every real seq differs from 0.
+
+    Using it as the `before` state made `deliver` report success on the very next poll
+    even when nothing had moved -- a silent false positive in exactly the registration-lag
+    window that was just discovered to exist.
+    """
+    fake.on("agent.read", BLANK)
+    fake.on_sequence(
+        "agent.get",
+        [
+            _info(seq=4),  # wait_ready
+            {"__error__": {"code": "not_found", "message": "lag"}},  # before: would be seq 0
+            _info(seq=4),  # a real sample -- unchanged, so nothing was delivered
+        ],
+    )
+    fake.on("agent.prompt", _info(seq=4))
+    fake.on("agent.send_keys", {"type": "ok"})
+
+    with pytest.raises(WorkflowError):
+        await delivery.deliver(client, "w1:p1", "hello", attempts=1)
+
+
+async def test_unknown_polls_do_not_count_as_movement(
+    client: HerdrClient, fake: FakeHerdr, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent that vanishes mid-turn must not read as a delivered prompt."""
+    monkeypatch.setattr(delivery, "DELIVERY_POLL_SECONDS", 2)
+    fake.on("agent.read", BLANK)
+    fake.on_sequence(
+        "agent.get",
+        [
+            _info(seq=4),  # wait_ready
+            _info(seq=4),  # before: known
+            {"__error__": {"code": "not_found", "message": "gone"}},  # poll
+            {"__error__": {"code": "not_found", "message": "gone"}},  # poll
+            {"__error__": {"code": "not_found", "message": "gone"}},  # final check
+        ],
+    )
+    fake.on("agent.prompt", _info(seq=4))
+    fake.on("agent.send_keys", {"type": "ok"})
+
+    with pytest.raises(WorkflowError):
+        await delivery.deliver(client, "w1:p1", "hello", attempts=1)
+
+
+async def test_readiness_ceiling_is_short_enough_for_a_prompt_command(
+    client: HerdrClient, fake: FakeHerdr
+) -> None:
+    """`wq chat` and `wq ask` are documented as returning promptly (go.md).
+
+    A chat tab's agent was measured never setting interactive_ready, so this ceiling is
+    paid in full on every fresh tab. It must stay small -- the receipt loop, not this wait,
+    is what establishes delivery.
+    """
+    assert delivery.READY_TIMEOUT <= 15.0

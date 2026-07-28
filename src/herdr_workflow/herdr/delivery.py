@@ -32,7 +32,13 @@ from herdr_workflow.protocol.messages import AgentReadResult, AgentResult
 # one the caller named on the command line, so the answer is yes.
 TRUST_DIALOG = "Yes, I trust this folder"
 
-READY_TIMEOUT = 60.0
+# How long to wait for the readiness *hint* before prompting anyway.
+#
+# Short on purpose. `interactive_ready` is advisory (see wait_ready), and a chat tab's agent
+# was measured never setting it at all -- so a long ceiling here buys nothing and costs the
+# caller the whole wait. `wq chat` and `wq ask` are documented as returning promptly, and
+# the delivery receipt is what actually establishes success.
+READY_TIMEOUT = 10.0
 SETTLE_ATTEMPTS = 20
 DELIVERY_POLL_SECONDS = 10
 POLL_INTERVAL = 1.0
@@ -102,6 +108,30 @@ async def wait_ready(client: HerdrClient, pane: str, timeout: float = READY_TIME
     return False
 
 
+async def await_known_state(client: HerdrClient, pane: str) -> AgentState:
+    """Poll until the pane reports an agent, and return that state.
+
+    Needed because `agent_state` reports `unknown` with `seq == 0` both when registration
+    has not caught up and when the agent is gone. Using such a sample as the *before* state
+    of a delivery is a silent false positive: any real sequence number differs from 0, so
+    the very next poll looks like the prompt landed even when nothing moved.
+
+    So a delivery never starts from an unknown state -- it waits for a real one, or fails.
+    """
+    deadline = time.monotonic() + UNKNOWN_GRACE
+    while True:
+        state = await agent_state(client, pane)
+        if state.status != "unknown":
+            return state
+        if time.monotonic() >= deadline:
+            raise WorkflowError(
+                f"no agent in pane {pane}",
+                why=f"the pane reported no agent for {UNKNOWN_GRACE:.0f}s",
+                fix=f"look at it: herdr agent attach {pane}",
+            )
+        await asyncio.sleep(POLL_INTERVAL)
+
+
 async def read_screen(client: HerdrClient, pane: str, lines: int = 40) -> str:
     try:
         result = await client.call(
@@ -169,7 +199,8 @@ async def deliver(client: HerdrClient, pane: str, text: str, attempts: int = 5) 
     for attempt in range(1, attempts + 1):
         await settle(client, pane)
 
-        before = await agent_state(client, pane)
+        # Never start from `unknown`: its seq is 0, and every real seq differs from 0.
+        before = await await_known_state(client, pane)
         try:
             # The returned AgentInfo carries the pre-prompt state, so it is discarded --
             # verified live, seq was unchanged in the response and only moved on a
@@ -211,12 +242,16 @@ async def _confirm_delivery(client: HerdrClient, pane: str, before: AgentState) 
        the loop gave up -- so this is checked once more at the end. Compared against the
        starting status rather than a fixed list, because a warm pane sits in `done` from
        its previous turn and seeing `done` would prove nothing.
+    An `unknown` sample proves nothing either way -- it carries `seq == 0`, which differs
+    from every real sequence number -- so those are skipped rather than counted as movement.
     """
     for _ in range(DELIVERY_POLL_SECONDS):
         now = await agent_state(client, pane)
-        if now.seq != before.seq:
+        if now.status != "unknown" and now.seq != before.seq:
             return True
         await asyncio.sleep(POLL_INTERVAL)
 
     now = await agent_state(client, pane)
+    if now.status == "unknown":
+        return False
     return now.seq != before.seq or now.status != before.status
