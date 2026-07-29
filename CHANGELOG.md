@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0 - 2026-07-29
+
 First working version. All 13 commands have been driven end to end against a real herdr
 daemon and real agents.
 

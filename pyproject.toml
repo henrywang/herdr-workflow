@@ -1,6 +1,6 @@
 [project]
 name = "herdr-workflow"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Opinionated multi-agent plan/build/review/ship workflows for herdr"
 readme = "README.md"
 requires-python = ">=3.12"
