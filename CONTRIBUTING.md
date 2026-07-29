@@ -24,6 +24,24 @@ Before pushing:
 uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 ```
 
+## Release
+
+A pushed `v*` tag runs `.github/workflows/release.yml`: it tests and builds once, publishes
+both distributions to PyPI with trusted publishing, then creates the GitHub release with
+the same artifacts.
+
+Configure the PyPI trusted publisher once with project `herdr-workflow`, owner
+`henrywang`, repository `herdr-workflow`, workflow `release.yml`, and environment `pypi`.
+No publishing token or repository secret is needed.
+
+Set the stable version in `pyproject.toml`, move the changelog entries under that version,
+commit, then push an annotated matching tag:
+
+```bash
+git tag -a v0.1.0 -m "Release 0.1.0"
+git push origin main v0.1.0
+```
+
 ## How it fits together
 
 ```
