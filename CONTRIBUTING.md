@@ -28,7 +28,7 @@ uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 
 A pushed `v*` tag runs `.github/workflows/release.yml`: it tests and builds once, publishes
 both distributions to PyPI with trusted publishing, then creates the GitHub release with
-the same artifacts.
+the same artifacts and the matching version section from `CHANGELOG.md`.
 
 Configure the PyPI trusted publisher once with project `herdr-workflow`, owner
 `henrywang`, repository `herdr-workflow`, workflow `release.yml`, and environment `pypi`.
