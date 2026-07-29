@@ -115,6 +115,12 @@ def test_doctor_warns_on_protocol_mismatch(
     threaded_fake.on("ping", {"type": "pong", "version": "9.9.9", "protocol": 99})
     threaded_fake.on("session.snapshot", snapshot_result)
     monkeypatch.setenv("HERDR_SOCKET_PATH", str(threaded_fake.socket_path))
+    real_which = cli.doctor_workflow.shutil.which
+
+    def which(name: str) -> str | None:
+        return "/usr/bin/herdr" if name == "herdr" else real_which(name)
+
+    monkeypatch.setattr(cli.doctor_workflow.shutil, "which", which)
 
     result = runner.invoke(cli.app, ["--json", "doctor"])
     payload = json.loads(result.stdout)
