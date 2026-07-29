@@ -165,6 +165,19 @@ def test_prose_about_approval_is_not_approval() -> None:
     assert not prompts.approved("This looks approved to me, broadly.")
 
 
+@pytest.mark.parametrize(
+    "ending",
+    ["\n", "\n\n", "\n\n\n", "\r\n\r\n"],
+)
+def test_trailing_blank_lines_are_tolerated(ending: str) -> None:
+    assert prompts.approved(f"VERDICT: APPROVED{ending}")
+
+
+def test_text_after_the_verdict_is_not_approval() -> None:
+    assert not prompts.approved("VERDICT: APPROVED\n\nBLOCKING: missed finding")
+    assert not prompts.approved("VERDICT: APPROVED\n\n  BLOCKING: missed finding")
+
+
 def test_an_empty_review_is_not_approval() -> None:
     assert not prompts.approved("")
 

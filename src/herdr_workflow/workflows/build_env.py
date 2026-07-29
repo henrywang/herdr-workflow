@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from herdr_workflow.errors import WorkflowError
+
 DEFAULT_BASE = "origin/main"
 
 
@@ -47,6 +49,30 @@ def read(path: Path) -> BuildEnv:
         parent_workspace=parent,
         base=lines[4].strip() or DEFAULT_BASE,
     )
+
+
+def require(path: Path, slug: str) -> BuildEnv:
+    if not path.is_file() or path.stat().st_size == 0:
+        raise WorkflowError(
+            f"no build for {slug}",
+            why=f"nothing has been built here: {path} does not exist",
+            fix=f"run: wq build {slug} <repo>",
+        )
+    try:
+        env = read(path)
+    except (OSError, ValueError) as exc:
+        raise WorkflowError(
+            f"could not read the build metadata for {slug}",
+            why=f"{path} is malformed: {exc}",
+            fix=f"re-run: wq build {slug} <repo>",
+        ) from exc
+    if not env.repo or not env.branch or not env.worktree:
+        raise WorkflowError(
+            f"could not read the build metadata for {slug}",
+            why=f"{path} is missing a repository, branch, or worktree",
+            fix=f"re-run: wq build {slug} <repo>",
+        )
+    return env
 
 
 def write(path: Path, env: BuildEnv) -> None:

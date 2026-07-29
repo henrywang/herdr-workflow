@@ -36,6 +36,6 @@ while it will silently swallow your prompt, a successful `agent.prompt` does not
 agent took the text, `gh pr checks` says "no checks reported" before CI starts.
 
 Thirteen of these are catalogued in [docs/behaviors.md](docs/behaviors.md), each with the
-test that pins it — 235 tests, ~30 seconds, no herdr installation required. That catalogue
+test that pins it — 267 tests, ~30 seconds, no herdr installation required. That catalogue
 is the most portable thing in this project: if you script Claude Code, Codex, or Amp, most
 of it applies to you whether or not you use herdr.

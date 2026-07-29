@@ -68,10 +68,6 @@ def workspace_pane_by_label(snapshot: Snapshot, ws_label: str, pane_label: str) 
     return pane.pane_id if pane else None
 
 
-def agent_on_pane(snapshot: Snapshot, pane_id: str) -> Agent | None:
-    return next((a for a in snapshot.agents if a.pane_id == pane_id), None)
-
-
 def tab_by_label(snapshot: Snapshot, label: str) -> str | None:
     tab = next((t for t in snapshot.tabs if t.label == label), None)
     return tab.tab_id if tab else None

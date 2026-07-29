@@ -14,11 +14,11 @@ absent from `merge` on purpose, and there is a test asserting its absence.
 from __future__ import annotations
 
 import shutil
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from herdr_workflow import process
 from herdr_workflow.errors import WorkflowError
 from herdr_workflow.output import console
 
@@ -45,13 +45,7 @@ def _run(args: list[str], cwd: Path) -> Run:
     matching on the text or reporting it.
     """
     try:
-        proc = subprocess.run(
-            ["gh", *args],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        proc = process.run(["gh", *args], cwd=cwd)
     except OSError as exc:
         raise WorkflowError(
             "could not run gh",

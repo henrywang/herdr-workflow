@@ -16,7 +16,7 @@ from herdr_workflow.errors import ApiError
 from herdr_workflow.herdr import ops
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.output import console
-from herdr_workflow.workflows import build_env
+from herdr_workflow.workflows import build_env, slugs
 
 
 def _empty() -> list[str]:
@@ -79,6 +79,7 @@ async def close_parent_ws(client: HerdrClient, workspace_id: str | None) -> bool
 
 
 async def clean(client: HerdrClient, slug: str, root: Path) -> CleanResult:
+    slugs.validate(slug)
     result = CleanResult()
     snapshot = await client.snapshot()
 
@@ -108,9 +109,13 @@ async def clean(client: HerdrClient, slug: str, root: Path) -> CleanResult:
     # cannot see it either -- its id is in build.env.
     env_path = build_env.path_for(root, slug)
     if env_path.is_file():
-        parent = build_env.read(env_path).parent_workspace
-        if await close_parent_ws(client, parent):
-            result.closed_workspaces.append(f"{parent} (parent repo)")
+        try:
+            parent = build_env.read(env_path).parent_workspace
+        except (OSError, ValueError) as exc:
+            console.detail(f"could not read {env_path}: {exc}")
+        else:
+            if await close_parent_ws(client, parent):
+                result.closed_workspaces.append(f"{parent} (parent repo)")
 
     scratch = root / slug
     if scratch.is_dir():

@@ -29,7 +29,7 @@ from herdr_workflow.herdr.agents import start_agent
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.herdr.delivery import ask
 from herdr_workflow.output import console
-from herdr_workflow.workflows import build_env, prompts
+from herdr_workflow.workflows import build_env, prompts, slugs
 from herdr_workflow.workflows.loops import RoundOutcome, expect_file, mtime
 
 
@@ -74,6 +74,7 @@ class BuildResult:
 
 
 async def build(client: HerdrClient, config: Config, slug: str, repo_arg: Path) -> BuildResult:
+    slugs.validate(slug)
     paths = BuildPaths.for_slug(config.root, slug)
 
     # Deliberately *not* "approved": a plan that hit its round cap is still a plan, and

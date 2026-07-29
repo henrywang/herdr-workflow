@@ -48,7 +48,3 @@ class RoundOutcome:
 
     rounds: int
     approved: bool
-
-    @property
-    def stopped_at_limit(self) -> bool:
-        return not self.approved

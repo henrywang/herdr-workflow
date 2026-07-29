@@ -20,10 +20,6 @@ import msgspec
 # tool against a young API will break for strangers in ways it never breaks for us.
 PINNED_PROTOCOL = 17
 
-# herdr's agent status vocabulary. `done` does not persist: a pane that has been read
-# settles back to `idle`. See behavior #5 -- this enum is the reason that bug exists.
-AGENT_STATUSES = ("idle", "working", "blocked", "done", "unknown")
-
 
 class ErrorBody(msgspec.Struct):
     code: str

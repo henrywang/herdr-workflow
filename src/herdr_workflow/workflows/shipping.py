@@ -35,7 +35,7 @@ from herdr_workflow.git import gh
 from herdr_workflow.herdr import ops
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.output import console
-from herdr_workflow.workflows import build_env, cleanup
+from herdr_workflow.workflows import build_env, cleanup, slugs
 from herdr_workflow.workflows.building import BuildPaths
 from herdr_workflow.workflows.inbox import inbox_workspace_id
 
@@ -59,14 +59,9 @@ class GoResult:
 
 
 def _require_build(config: Config, slug: str) -> tuple[BuildPaths, build_env.BuildEnv]:
+    slugs.validate(slug)
     paths = BuildPaths.for_slug(config.root, slug)
-    if not paths.env.is_file() or paths.env.stat().st_size == 0:
-        raise WorkflowError(
-            f"no build for {slug}",
-            why=f"nothing has been built here: {paths.env} does not exist",
-            fix=f"run: wq build {slug} <repo>",
-        )
-    return paths, build_env.read(paths.env)
+    return paths, build_env.require(paths.env, slug)
 
 
 # -- ship --------------------------------------------------------------------

@@ -25,7 +25,7 @@ from herdr_workflow.herdr import ops
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.herdr.delivery import agent_state, ask
 from herdr_workflow.output import console
-from herdr_workflow.workflows import build_env, prompts
+from herdr_workflow.workflows import build_env, prompts, slugs
 from herdr_workflow.workflows.building import BuildPaths
 from herdr_workflow.workflows.loops import expect_file, mtime
 
@@ -49,8 +49,9 @@ async def revise(client: HerdrClient, config: Config, slug: str, comment: str) -
             fix=f'run: wq revise {slug} "..."',
         )
 
+    slugs.validate(slug)
     paths = BuildPaths.for_slug(config.root, slug)
-    env = _read_env(paths, slug)
+    env = build_env.require(paths.env, slug)
     worktree = Path(env.worktree)
 
     # Each of these produces a different remedy, so the order they are checked in is the
@@ -126,16 +127,6 @@ async def revise(client: HerdrClient, config: Config, slug: str, comment: str) -
         review_file=paths.review,
         approved=approved,
     )
-
-
-def _read_env(paths: BuildPaths, slug: str) -> build_env.BuildEnv:
-    if not paths.env.is_file() or paths.env.stat().st_size == 0:
-        raise WorkflowError(
-            f"no build for {slug}",
-            why=f"nothing has been built here: {paths.env} does not exist",
-            fix=f"run: wq build {slug} <repo>",
-        )
-    return build_env.read(paths.env)
 
 
 async def _find_panes(client: HerdrClient, slug: str, repo: str) -> tuple[str, str]:

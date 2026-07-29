@@ -32,6 +32,7 @@ src/herdr_workflow/
   cli.py               Typer commands, output selection, and process exit codes
   config.py            defaults -> user config -> project config -> WQ_* environment
   errors.py            user-facing errors with causes and remedies
+  process.py           subprocess execution shared by Git and GitHub CLI operations
 
   git/
     __init__.py        local Git operations: repositories, bases, diffs, pushes, branches
@@ -63,6 +64,7 @@ src/herdr_workflow/
     prompts.py         agent instructions and machine-readable review verdicts
     revising.py        one additional code turn and review turn
     shipping.py        push, PR, CI, merge, and post-merge cleanup
+    slugs.py           validate filesystem- and branch-safe workflow names
     tabs.py            chat, ask, and tidy inbox tabs
 ```
 

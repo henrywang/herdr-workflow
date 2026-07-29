@@ -105,6 +105,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: Annotated[
         bool, typer.Option("--version", callback=_version_callback, is_eager=True)
     ] = False,
@@ -117,7 +118,7 @@ def main(
     _ctx.debug = debug
     console.set_verbose(verbose or debug)
     try:
-        _ctx.config = config_module.load(config)
+        _ctx.config = config_module.load(config, validate_config=ctx.invoked_subcommand != "doctor")
     except WqError as exc:
         if debug:
             raise
@@ -261,7 +262,8 @@ def cmd_ask(
         path = socket_path.resolve(cfg.herdr.session, cfg.herdr.socket)
         # WQ_ASK_CWD is documented usage in the router prompt:
         # `WQ_ASK_CWD=<dir> wq ask "..."`.
-        cwd = Path(os.environ.get("WQ_ASK_CWD", "")).expanduser() or Path.cwd()
+        ask_cwd = os.environ.get("WQ_ASK_CWD")
+        cwd = Path(ask_cwd).expanduser() if ask_cwd else Path.cwd()
 
         async def go() -> tabs.TabResult:
             async with connect(path) as client:

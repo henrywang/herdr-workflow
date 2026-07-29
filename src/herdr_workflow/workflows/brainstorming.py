@@ -22,6 +22,7 @@ from herdr_workflow.herdr.agents import start_agent
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.herdr.delivery import deliver
 from herdr_workflow.output import console
+from herdr_workflow.workflows import slugs
 
 INBOX_DIR = "inbox"
 
@@ -85,6 +86,7 @@ def resolve_vault(config: Config) -> Path:
 
 
 async def brainstorm(client: HerdrClient, config: Config, slug: str, idea: str) -> BrainstormResult:
+    slugs.validate(slug)
     if not idea.strip():
         raise WorkflowError(
             "describe the idea",

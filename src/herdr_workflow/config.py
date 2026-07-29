@@ -47,6 +47,11 @@ class AgentSpec:
             )
         kind, level = parts[0], parts[-1]
         model = ":".join(parts[1:-1])
+        if not model or not level:
+            raise ConfigError(
+                f"bad agent spec for {role}: {spec!r}",
+                why="the model and level in an agent spec cannot be empty",
+            )
         if kind not in ("claude", "pi"):
             raise ConfigError(
                 f"unsupported agent kind {kind!r} in {role} spec {spec!r}",
@@ -140,6 +145,18 @@ def _merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
+    raw = data.get(name)
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"bad [{name}] configuration",
+            why=f"{name} must be a TOML table",
+        )
+    return cast("dict[str, Any]", raw)
+
+
 def _apply_agents(agents: Agents, table: dict[str, Any]) -> Agents:
     updates: dict[str, AgentSpec] = {}
     for role in ("plan", "code", "review", "idea", "ask", "router"):
@@ -186,8 +203,12 @@ def _env_overrides(config: Config) -> Config:
 
     paths = config.paths
     if "WQ_ROOT" in env:
+        if not env["WQ_ROOT"].strip():
+            raise ConfigError("WQ_ROOT cannot be empty")
         paths = replace(paths, root=Path(env["WQ_ROOT"]))
     if "WQ_VAULT" in env:
+        if not env["WQ_VAULT"].strip():
+            raise ConfigError("WQ_VAULT cannot be empty")
         paths = replace(paths, notes=Path(env["WQ_VAULT"]))
 
     herdr = config.herdr
@@ -201,7 +222,30 @@ def _env_overrides(config: Config) -> Config:
     return Config(agents=agents, loops=loops, paths=paths, herdr=herdr, claude=claude)
 
 
-def load(explicit: Path | None = None) -> Config:
+def validate(config: Config) -> Config:
+    for name in Loops.__dataclass_fields__:
+        value = getattr(config.loops, name)
+        if type(value) is not int or value <= 0:
+            raise ConfigError(
+                f"loops.{name} must be a positive integer, got {value!r}",
+                why="round counts, attempts, and timeouts must be greater than zero",
+            )
+    socket: Any = config.herdr.socket
+    session: Any = config.herdr.session
+    inbox_label: Any = config.herdr.inbox_label
+    permission_mode: Any = config.claude.permission_mode
+    if not isinstance(socket, str):
+        raise ConfigError("herdr.socket must be a string")
+    if session is not None and not isinstance(session, str):
+        raise ConfigError("herdr.session must be a string")
+    if not isinstance(inbox_label, str) or not inbox_label.strip():
+        raise ConfigError("herdr.inbox_label must be a non-empty string")
+    if not isinstance(permission_mode, str) or not permission_mode:
+        raise ConfigError("claude.permission_mode must be a non-empty string")
+    return config
+
+
+def load(explicit: Path | None = None, *, validate_config: bool = True) -> Config:
     """Built-in defaults -> user config -> project config -> environment."""
     if explicit is not None:
         if not explicit.is_file():
@@ -214,35 +258,42 @@ def load(explicit: Path | None = None) -> Config:
         data = _merge(_load_toml(USER_CONFIG), _load_toml(PROJECT_CONFIG))
 
     config = Config()
-    if "agents" in data:
-        config = replace(config, agents=_apply_agents(config.agents, data["agents"]))
-    if "loops" in data:
+    agents = _section(data, "agents")
+    if agents:
+        config = replace(config, agents=_apply_agents(config.agents, agents))
+
+    loops = _section(data, "loops")
+    if loops:
         known = {f for f in Loops.__dataclass_fields__}
         config = replace(
             config,
-            loops=replace(config.loops, **{k: v for k, v in data["loops"].items() if k in known}),
+            loops=replace(config.loops, **{k: v for k, v in loops.items() if k in known}),
         )
-    if "paths" in data:
-        table = data["paths"]
+
+    paths_table = _section(data, "paths")
+    if paths_table:
         paths = config.paths
-        if table.get("root"):
-            paths = replace(paths, root=Path(str(table["root"])))
-        if table.get("notes"):
-            paths = replace(paths, notes=Path(str(table["notes"])))
+        if paths_table.get("root"):
+            paths = replace(paths, root=Path(str(paths_table["root"])))
+        if paths_table.get("notes"):
+            paths = replace(paths, notes=Path(str(paths_table["notes"])))
         config = replace(config, paths=paths)
-    if "herdr" in data:
+
+    herdr = _section(data, "herdr")
+    if herdr:
         known = {f for f in Herdr.__dataclass_fields__}
         config = replace(
             config,
-            herdr=replace(config.herdr, **{k: v for k, v in data["herdr"].items() if k in known}),
+            herdr=replace(config.herdr, **{k: v for k, v in herdr.items() if k in known}),
         )
-    if "claude" in data:
+
+    claude = _section(data, "claude")
+    if claude:
         known = {f for f in Claude.__dataclass_fields__}
         config = replace(
             config,
-            claude=replace(
-                config.claude, **{k: v for k, v in data["claude"].items() if k in known}
-            ),
+            claude=replace(config.claude, **{k: v for k, v in claude.items() if k in known}),
         )
 
-    return _env_overrides(config)
+    config = _env_overrides(config)
+    return validate(config) if validate_config else config

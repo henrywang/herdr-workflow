@@ -24,7 +24,7 @@ VERDICT_CHANGES = "VERDICT: CHANGES"
 
 # Anchored and whole-line: a reviewer that merely *discusses* approval in its prose has not
 # approved anything. Anything that is not an explicit approval means "keep going".
-_APPROVED = re.compile(rf"^{re.escape(VERDICT_APPROVED)}[ \t]*$", re.MULTILINE)
+_APPROVED = re.compile(rf"(?:^|\r?\n){re.escape(VERDICT_APPROVED)}\Z")
 
 REVIEW_PROTOCOL = (
     "Classify each finding as BLOCKING or NON-BLOCKING. Be adversarial: your job is to "
@@ -42,7 +42,7 @@ def approved(review_text: str) -> bool:
     Only an exact `VERDICT: APPROVED` line counts. Treating anything ambiguous as approval
     would quietly convert a disagreement into a merge.
     """
-    return _APPROVED.search(review_text) is not None
+    return _APPROVED.search(review_text.rstrip()) is not None
 
 
 def approved_file(path: Path) -> bool:

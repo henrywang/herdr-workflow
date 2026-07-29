@@ -125,6 +125,34 @@ def test_doctor_warns_on_protocol_mismatch(
     assert result.exit_code == 0
 
 
+def test_doctor_reports_invalid_config_with_the_rest_of_its_checks(
+    wq_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WQ_CODE_ROUNDS", "0")
+
+    result = runner.invoke(cli.app, ["--json", "doctor"])
+
+    payload = json.loads(result.stdout)
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert result.exit_code == 1
+    assert checks["configuration"]["status"] == "fail"
+    assert "positive integer" in checks["configuration"]["detail"]
+    assert checks["protocol"]["status"] == "ok"
+
+
+def test_doctor_reports_invalid_config_file_as_a_check(wq_env: Path, tmp_path: Path) -> None:
+    path = tmp_path / "bad.toml"
+    path.write_text('[herdr]\ninbox_label = ""\n')
+
+    result = runner.invoke(cli.app, ["--config", str(path), "--json", "doctor"])
+
+    payload = json.loads(result.stdout)
+    configuration = next(check for check in payload["checks"] if check["name"] == "configuration")
+    assert result.exit_code == 1
+    assert configuration["status"] == "fail"
+    assert "inbox_label" in configuration["detail"]
+
+
 def test_doctor_flags_a_reviewer_that_wrote_the_code(
     wq_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -229,6 +257,34 @@ def test_revise_without_a_build_exits_one(wq_env: Path, threaded_fake: FakeHerdr
     result = runner.invoke(cli.app, ["revise", "nothing-here", "change something"])
     assert result.exit_code == 1
     assert "no build for nothing-here" in result.output
+
+
+def test_ask_defaults_to_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Path] = []
+
+    async def ask(client: object, config: object, question: str, cwd: Path) -> cli.tabs.TabResult:
+        seen.append(cwd)
+        return cli.tabs.TabResult("w1", "ask-1", "p1", True)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("WQ_ASK_CWD", raising=False)
+    monkeypatch.setattr(cli.tabs, "ask", ask)
+
+    result = runner.invoke(cli.app, ["ask", "question"])
+
+    assert result.exit_code == 0
+    assert seen == [tmp_path]
+
+
+def test_path_traversal_slug_is_rejected_before_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WQ_ROOT", str(tmp_path / "root"))
+    result = runner.invoke(cli.app, ["clean", "../outside"])
+    assert result.exit_code == 1
+    assert "invalid slug" in result.output
 
 
 def test_bad_config_reports_cleanly(tmp_path: Path) -> None:

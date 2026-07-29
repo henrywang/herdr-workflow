@@ -44,6 +44,12 @@ async def _built(
 # -- the round ---------------------------------------------------------------
 
 
+async def test_missing_comment_is_reported_before_an_invalid_slug(client: HerdrClient) -> None:
+    config = Config()
+    with pytest.raises(WorkflowError, match="describe the change you want"):
+        await revising.revise(client, config, "BadSlug", "")
+
+
 async def test_one_code_turn_and_one_review_turn(
     client: HerdrClient, fake: FakeHerdr, tmp_path: Path, repo: Path
 ) -> None:

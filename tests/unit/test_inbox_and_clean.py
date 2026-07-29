@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from herdr_workflow.config import Config
+from herdr_workflow.errors import WorkflowError
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.workflows import build_env, cleanup, inbox
 from tests.fake_herdr import FakeHerdr
@@ -227,6 +228,14 @@ def test_a_missing_parent_keeps_the_base_on_line_five(tmp_path: Path) -> None:
     assert build_env.read(path).base == "origin/master"
 
 
+@pytest.mark.parametrize("content", [b"/repo\n", b"\xff\n"])
+def test_malformed_build_metadata_is_rejected(tmp_path: Path, content: bytes) -> None:
+    path = tmp_path / "build.env"
+    path.write_bytes(content)
+    with pytest.raises(WorkflowError, match="could not read the build metadata"):
+        build_env.require(path, "slug")
+
+
 def test_the_legacy_fields_stay_in_the_first_four_lines(tmp_path: Path) -> None:
     """Adding the base ref must not move the fields in the legacy format."""
     path = tmp_path / "build.env"
@@ -359,6 +368,21 @@ async def test_clean_also_closes_the_parent_repo_workspace_from_build_env(
 
     result = await cleanup.clean(client, "alpha", root)
     assert "w5 (parent repo)" in result.closed_workspaces
+
+
+async def test_clean_removes_scratch_with_corrupt_build_metadata(
+    client: HerdrClient, fake: FakeHerdr, tmp_path: Path
+) -> None:
+    root = tmp_path / "wq"
+    scratch = root / "alpha"
+    scratch.mkdir(parents=True)
+    (scratch / "build.env").write_bytes(b"\xff\n")
+    fake.on("session.snapshot", _snapshot())
+
+    result = await cleanup.clean(client, "alpha", root)
+
+    assert result.removed_dir == scratch
+    assert not scratch.exists()
 
 
 async def test_clean_of_an_unknown_slug_is_harmless(

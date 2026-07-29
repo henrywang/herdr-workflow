@@ -11,9 +11,9 @@ command diffs against the same commit the branch was cut from.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
+from herdr_workflow import process
 from herdr_workflow.errors import GitError
 
 # Tried in order when the remote does not publish a HEAD.
@@ -23,13 +23,7 @@ _FALLBACK_BRANCHES = ("main", "master")
 def _run(args: list[str], cwd: Path, *, what: str) -> str:
     """Run a git command, returning stdout. Raises GitError with git's own message."""
     try:
-        proc = subprocess.run(
-            ["git", *args],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        proc = process.run(["git", *args], cwd=cwd)
     except OSError as exc:
         raise GitError(
             f"could not run git: {what}",
@@ -48,7 +42,7 @@ def _run(args: list[str], cwd: Path, *, what: str) -> str:
 def _ok(args: list[str], cwd: Path) -> bool:
     """Did the command succeed? For probes, where failure is an answer rather than an error."""
     try:
-        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+        proc = process.run(["git", *args], cwd=cwd)
     except OSError:
         return False
     return proc.returncode == 0

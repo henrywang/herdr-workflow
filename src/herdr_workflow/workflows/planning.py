@@ -23,7 +23,7 @@ from herdr_workflow.herdr.agents import start_agent
 from herdr_workflow.herdr.client import HerdrClient
 from herdr_workflow.herdr.delivery import ask
 from herdr_workflow.output import console
-from herdr_workflow.workflows import prompts
+from herdr_workflow.workflows import prompts, slugs
 from herdr_workflow.workflows.loops import RoundOutcome, expect_file, mtime
 
 
@@ -51,6 +51,7 @@ class PlanPaths:
 
 
 async def plan(client: HerdrClient, config: Config, slug: str, request: str) -> PlanResult:
+    slugs.validate(slug)
     paths = PlanPaths.for_slug(config.root, slug)
     paths.dir.mkdir(parents=True, exist_ok=True)
     paths.request.write_text(request.rstrip() + "\n")

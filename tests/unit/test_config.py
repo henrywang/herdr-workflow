@@ -31,6 +31,13 @@ def test_agent_spec_rejects_unknown_kind() -> None:
         AgentSpec.parse("cursor:whatever:high")
 
 
+def test_agent_spec_rejects_empty_fields() -> None:
+    with pytest.raises(ConfigError):
+        AgentSpec.parse("claude::high")
+    with pytest.raises(ConfigError):
+        AgentSpec.parse("claude:opus:")
+
+
 def test_defaults_pair_a_different_model_for_review() -> None:
     """The one rule the loop depends on: the reviewer is not the model that wrote."""
     cfg = config_module.Config()
@@ -92,6 +99,26 @@ def test_every_bash_env_var_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None
     assert cfg.herdr.inbox_label == "mailbox"
     assert cfg.claude.permission_mode == "acceptEdits"
     assert cfg.agents.router.model == "some-model"
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_nonpositive_loop_values_are_rejected(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WQ_CODE_ROUNDS", value)
+    with pytest.raises(ConfigError, match="positive integer"):
+        config_module.load(None)
+
+
+def test_config_sections_must_be_tables(tmp_path: Path) -> None:
+    path = tmp_path / "wq.toml"
+    path.write_text('loops = "oops"\n')
+    with pytest.raises(ConfigError, match=r"bad \[loops\] configuration"):
+        config_module.load(path)
+
+
+def test_empty_root_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WQ_ROOT", "")
+    with pytest.raises(ConfigError, match="WQ_ROOT cannot be empty"):
+        config_module.load(None)
 
 
 def test_non_numeric_env_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:

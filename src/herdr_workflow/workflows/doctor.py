@@ -7,13 +7,14 @@ as failures deep inside a workflow.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from herdr_workflow import config as config_module
+from herdr_workflow import process
 from herdr_workflow.config import Config
-from herdr_workflow.errors import HerdrError
+from herdr_workflow.errors import ConfigError, HerdrError
 from herdr_workflow.herdr import socket_path
 from herdr_workflow.herdr.client import HerdrClient, connect
 from herdr_workflow.protocol.messages import PINNED_PROTOCOL
@@ -44,13 +45,8 @@ def _git_repo(cwd: Path) -> Check:
     if shutil.which("git") is None:
         return Check("repository", Status.WARN, "skipped (git not installed)")
     try:
-        out = subprocess.run(
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        out = process.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"], timeout=10)
+    except (OSError, process.TimeoutExpired) as exc:
         return Check("repository", Status.WARN, f"could not run git: {exc}")
     if out.returncode != 0:
         # Not an error: `wq list`, `wq chat`, and `wq ask` are all useful outside a repo.
@@ -164,28 +160,39 @@ async def run(config: Config, cwd: Path) -> list[Check]:
         _binary("gh", required=False, fix="install the GitHub CLI to use: wq ship / wq go"),
     ]
 
-    path = socket_path.resolve(config.herdr.session, config.herdr.socket)
-    if not path.exists():
-        checks.append(
-            Check("herdr socket", Status.FAIL, f"{path} does not exist", "start it with: herdr")
-        )
+    try:
+        config_module.validate(config)
+    except ConfigError as exc:
+        checks.append(Check("configuration", Status.FAIL, exc.message, exc.fix))
+
+    try:
+        path = socket_path.resolve(config.herdr.session, config.herdr.socket)
+    except (TypeError, ValueError) as exc:
+        checks.append(Check("herdr socket", Status.FAIL, f"invalid configuration: {exc}"))
     else:
-        # Do not report the socket as OK until something answers on it. A socket file
-        # outlives the process that made it, so "the file is there" and "herdr is running"
-        # are different claims -- and doctor's whole job is not being confusing about
-        # exactly this.
-        try:
-            async with connect(path) as client:
-                server = await _server_checks(client)
-            checks.append(Check("herdr socket", Status.OK, str(path)))
-            checks.extend(server)
-        except HerdrError as exc:
+        if not path.exists():
             checks.append(
-                Check("herdr socket", Status.FAIL, f"{path} exists but is stale", exc.why)
+                Check("herdr socket", Status.FAIL, f"{path} does not exist", "start it with: herdr")
             )
-            checks.append(
-                Check("herdr server", Status.FAIL, exc.message, exc.fix or "start it with: herdr")
-            )
+        else:
+            # Do not report the socket as OK until something answers on it. A socket file
+            # outlives the process that made it, so "the file is there" and "herdr is running"
+            # are different claims -- and doctor's whole job is not being confusing about
+            # exactly this.
+            try:
+                async with connect(path) as client:
+                    server = await _server_checks(client)
+                checks.append(Check("herdr socket", Status.OK, str(path)))
+                checks.extend(server)
+            except HerdrError as exc:
+                checks.append(
+                    Check("herdr socket", Status.FAIL, f"{path} exists but is stale", exc.why)
+                )
+                checks.append(
+                    Check(
+                        "herdr server", Status.FAIL, exc.message, exc.fix or "start it with: herdr"
+                    )
+                )
 
     checks.append(_git_repo(cwd))
     checks.extend(_config_check(config))
