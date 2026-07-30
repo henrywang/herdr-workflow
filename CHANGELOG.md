@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.1 - 2026-07-30
+
+### Fixed
+
+- `wq up` now closes Herdr's untouched startup `~` workspace after the inbox is ready,
+  while preserving any home workspace that has been modified or used.
+
+### Release tooling
+
+- GitHub release notes are now populated from the matching changelog section.
+
 ## 0.1.0 - 2026-07-29
 
 First working version. All 13 commands have been driven end to end against a real herdr
