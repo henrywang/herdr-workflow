@@ -39,7 +39,15 @@ def _tab(tab_id: str, ws_id: str, label: str) -> dict[str, Any]:
     }
 
 
-def _pane(pane_id: str, ws_id: str, tab_id: str, label: str | None = None) -> dict[str, Any]:
+def _pane(
+    pane_id: str,
+    ws_id: str,
+    tab_id: str,
+    label: str | None = None,
+    *,
+    cwd: str | None = None,
+    revision: int = 1,
+) -> dict[str, Any]:
     return {
         "pane_id": pane_id,
         "terminal_id": f"t-{pane_id}",
@@ -47,8 +55,9 @@ def _pane(pane_id: str, ws_id: str, tab_id: str, label: str | None = None) -> di
         "tab_id": tab_id,
         "focused": False,
         "agent_status": "unknown",
-        "revision": 1,
+        "revision": revision,
         "label": label,
+        "cwd": cwd,
     }
 
 
@@ -110,6 +119,70 @@ async def test_up_creates_the_workspace_when_absent(
     # The root tab is named after the workspace; the router needs its own name so the
     # next `up` can find it.
     assert fake.calls("tab.rename")[0]["params"]["label"] == "router"
+
+
+async def test_up_closes_herdrs_pristine_home_workspace(
+    client: HerdrClient, fake: FakeHerdr, tmp_path: Path
+) -> None:
+    fake.on(
+        "session.snapshot",
+        _snapshot(
+            workspaces=[_ws("~", "w0")],
+            tabs=[_tab("w0:t1", "w0", "1")],
+            panes=[_pane("w0:p1", "w0", "w0:t1", cwd=str(tmp_path), revision=0)],
+        ),
+    )
+    fake.on(
+        "workspace.create",
+        {
+            "type": "workspace_created",
+            "workspace": _ws("inbox", "w1"),
+            "tab": _tab("w1:t1", "w1", "inbox"),
+            "root_pane": _pane("w1:p1", "w1", "w1:t1"),
+        },
+    )
+    fake.on("agent.list", {"type": "agent_list", "agents": []})
+    _ok(
+        fake,
+        "tab.rename",
+        "agent.start",
+        "pane.rename",
+        "workspace.focus",
+        "pane.focus",
+        "workspace.close",
+    )
+
+    await inbox.up(client, Config(), tmp_path)
+
+    assert fake.calls("workspace.close")[0]["params"]["workspace_id"] == "w0"
+
+
+async def test_up_keeps_a_home_workspace_that_is_not_pristine(
+    client: HerdrClient, fake: FakeHerdr, tmp_path: Path
+) -> None:
+    fake.on(
+        "session.snapshot",
+        _snapshot(
+            workspaces=[_ws("~", "w0")],
+            tabs=[_tab("w0:t1", "w0", "shell")],
+            panes=[_pane("w0:p1", "w0", "w0:t1", cwd=str(tmp_path), revision=0)],
+        ),
+    )
+    fake.on(
+        "workspace.create",
+        {
+            "type": "workspace_created",
+            "workspace": _ws("inbox", "w1"),
+            "tab": _tab("w1:t1", "w1", "inbox"),
+            "root_pane": _pane("w1:p1", "w1", "w1:t1"),
+        },
+    )
+    fake.on("agent.list", {"type": "agent_list", "agents": []})
+    _ok(fake, "tab.rename", "agent.start", "pane.rename", "workspace.focus", "pane.focus")
+
+    await inbox.up(client, Config(), tmp_path)
+
+    assert fake.calls("workspace.close") == []
 
 
 async def test_up_is_idempotent_when_the_router_is_already_running(
