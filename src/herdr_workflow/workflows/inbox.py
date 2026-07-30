@@ -18,8 +18,36 @@ from herdr_workflow.errors import WorkflowError
 from herdr_workflow.herdr import ops
 from herdr_workflow.herdr.agents import start_agent
 from herdr_workflow.herdr.client import HerdrClient
+from herdr_workflow.protocol.messages import Snapshot
 
 ROUTER_TAB = "router"
+
+
+def _bootstrap_workspace_id(snapshot: Snapshot, home: Path) -> str | None:
+    """Return Herdr's untouched startup workspace, if it is still present.
+
+    Herdr creates a ``~`` workspace with one tab named ``1`` when a session starts. Once
+    the inbox exists that shell is just clutter. Match the complete pristine shape so an
+    intentional home-directory workspace is never closed merely because it is named ``~``.
+    """
+    for workspace in snapshot.workspaces:
+        if workspace.label != "~" or workspace.tab_count != 1 or workspace.pane_count != 1:
+            continue
+        tabs = [tab for tab in snapshot.tabs if tab.workspace_id == workspace.workspace_id]
+        panes = [pane for pane in snapshot.panes if pane.workspace_id == workspace.workspace_id]
+        agents = [
+            agent for agent in snapshot.agents if agent.workspace_id == workspace.workspace_id
+        ]
+        if (
+            len(tabs) == 1
+            and tabs[0].label == "1"
+            and len(panes) == 1
+            and panes[0].cwd == str(home)
+            and panes[0].revision == 0
+            and not agents
+        ):
+            return workspace.workspace_id
+    return None
 
 
 @dataclass(frozen=True)
@@ -46,6 +74,7 @@ async def inbox_workspace_id(client: HerdrClient, config: Config) -> str:
 async def up(client: HerdrClient, config: Config, home: Path) -> UpResult:
     snapshot = await client.snapshot()
     workspace = ops.workspace_by_label(snapshot, config.herdr.inbox_label)
+    bootstrap_workspace_id = _bootstrap_workspace_id(snapshot, home)
 
     created_workspace = False
     if workspace is None:
@@ -77,6 +106,15 @@ async def up(client: HerdrClient, config: Config, home: Path) -> UpResult:
 
     await ops.workspace_focus(client, workspace_id)
     await ops.pane_focus(client, pane_id)
+
+    # A fresh Herdr session starts with an otherwise unused ``~`` workspace. Close it only
+    # after the inbox is ready and focused, so the session is never left without a workspace.
+    if bootstrap_workspace_id is not None and bootstrap_workspace_id != workspace_id:
+        # Agent startup takes long enough for a person to begin using the shell. Recheck
+        # before closing so a workspace changed since the first snapshot is preserved.
+        current = await client.snapshot()
+        if _bootstrap_workspace_id(current, home) == bootstrap_workspace_id:
+            await ops.workspace_close(client, bootstrap_workspace_id)
 
     return UpResult(
         workspace_id=workspace_id,
